@@ -29,6 +29,7 @@ def _check_containerd():
 
     return True
 
+
 @when('apt.installed.containerd')
 @when_not('containerd.ready')
 def install_containerd():
@@ -40,6 +41,7 @@ def install_containerd():
     :returns: None
     """
     config_changed()
+
 
 @when('endpoint.containerd.departed')
 def purge_containerd():
