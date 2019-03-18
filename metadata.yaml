@@ -1,0 +1,22 @@
+name: containerd
+summary: Containerd container runtime subordinate
+maintainers:
+  - Joe Borg <joseph.borg@canonical.com>
+description: |
+  containerd manages the complete container lifecycle of its
+  host system, from image transfer and storage to container
+  execution and supervision to low-level storage to network
+  attachments and beyond. 
+tags:
+  - containers
+series:
+  - bionic
+subordinate: true
+provides:
+  sdn-plugin:
+    interface: sdn-plugin
+    scope: container
+requires:
+  containerd:
+    interface: container-runtime
+    scope: container

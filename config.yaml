@@ -1,0 +1,11 @@
+options:
+  install_sources:
+    description: |
+      Set install source.
+    type: string
+    default: ppa:mwhudson/devirt
+  runtime:
+    description: |
+      Set the containerd runtime.  Usually `runc` or `nvidia-container-runtime`.
+    type: string
+    default: runc
