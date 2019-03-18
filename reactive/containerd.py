@@ -2,6 +2,8 @@ import os
 
 from subprocess import check_call, CalledProcessError
 
+from charms.apt import purge
+
 from charms.reactive import endpoint_from_flag
 from charms.reactive import when, when_not, set_state
 
@@ -38,6 +40,16 @@ def install_containerd():
     :returns: None
     """
     config_changed()
+
+@when('endpoint.containerd.departed')
+def purge_containerd():
+    """
+    Purge Containerd from the
+    cluster.
+
+    :returns: None
+    """
+    purge('containerd')
 
 
 @when('config.changed')
