@@ -1,15 +1,18 @@
 import os
+import requests
 
-from subprocess import check_call, CalledProcessError
+from subprocess import check_call, check_output, CalledProcessError
 
 from charms.apt import purge
 
 from charms.reactive import endpoint_from_flag
-from charms.reactive import when, when_not, set_state
+from charms.reactive import when, when_not, set_state, is_state
 
 from charmhelpers.core import host
 from charmhelpers.core.templating import render
 from charmhelpers.core.hookenv import status_set, config
+
+from charmhelpers.fetch import apt_install, apt_update, import_key
 
 
 def _check_containerd():
@@ -43,6 +46,70 @@ def install_containerd():
     config_changed()
 
 
+@when_not('containerd.nvidia.available')
+@when_not('containerd.nvidia.ready')
+def check_for_gpu():
+    """
+    Check if an Nvidia GPU
+    exists.
+    """
+    out = check_output(['lspci', '-nnk']).rstrip()
+    if out.decode('utf-8').lower().count('nvidia') > 0:
+        set_state('containerd.nvidia.available')
+
+
+@when('containerd.nvidia.available')
+@when_not('containerd.nvidia.ready')
+def configure_nvidia():
+    status_set('maintenance', 'Installing Nvidia drivers.')
+
+    dist = host.lsb_release()
+    release = '{}{}'.format(
+        dist['DISTRIB_ID'].lower(),
+        dist['DISTRIB_RELEASE']
+    )
+
+    ncr_gpg_key = requests.get(
+        'https://nvidia.github.io/nvidia-container-runtime/gpgkey').text
+    import_key(ncr_gpg_key)
+    with open(
+        '/etc/apt/sources.list.d/nvidia-container-runtime.list', 'w'
+    ) as f:
+        f.write(
+            'deb '
+            'https://nvidia.github.io/libnvidia-container/{}/$(ARCH) /\n'
+                .format(release)
+        )
+        f.write(
+            'deb '
+            'https://nvidia.github.io/nvidia-container-runtime/{}/$(ARCH) /\n'
+                .format(release)
+        )
+
+    cuda_gpg_key = requests.get(
+        'https://developer.download.nvidia.com/'
+        'compute/cuda/repos/{}/x86_64/7fa2af80.pub'
+            .format(release.replace('.', ''))
+    ).text
+    import_key(cuda_gpg_key)
+    with open('/etc/apt/sources.list.d/cuda.list', 'w') as f:
+        f.write(
+            'deb '
+            'http://developer.download.nvidia.com/'
+            'compute/cuda/repos/{}/x86_64 /\n'
+                .format(release.replace('.', ''))
+        )
+
+    apt_update()
+
+    apt_install([
+        'cuda-drivers',
+        'nvidia-container-runtime',
+    ], fatal=True)
+
+    set_state('containerd.nvidia.ready')
+
+
 @when('endpoint.containerd.departed')
 def purge_containerd():
     """
@@ -57,13 +124,19 @@ def purge_containerd():
 @when('config.changed')
 def config_changed():
     """
-    Render the config template 
+    Render the config template
     and restart the service.
 
     :returns: None
     """
-    config_file: str = 'config.toml'
-    config_directory: str = '/etc/containerd'
+    context = config()
+    config_file = 'config.toml'
+    config_directory = '/etc/containerd'
+
+    if is_state('containerd.nvidia.available'):
+        context['runtime'] = 'nvidia-container-runtime'
+    else:
+        context['runtime'] = 'runc'
 
     if not os.path.isdir(config_directory):
         os.mkdir(config_directory)
@@ -71,7 +144,7 @@ def config_changed():
     render(
         config_file,
         os.path.join(config_directory, config_file),
-        config()
+        context
     )
 
     host.service_restart('containerd')
@@ -97,5 +170,5 @@ def pubish_config():
     endpoint.set_config(
         socket='unix:///var/run/containerd/containerd.sock',
         runtime='remote',  # TODO handle in k8s worker.
-        nvidia_enabled=False
+        nvidia_enabled=is_state('containerd.nvidia.ready')
     )
