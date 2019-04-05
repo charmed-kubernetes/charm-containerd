@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 
 from subprocess import check_call, check_output, CalledProcessError
@@ -132,6 +133,10 @@ def config_changed():
     context = config()
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
+
+    # Mutate the input string into a dictionary.
+    context['custom_registries'] = \
+        json.loads(context['custom_registries'])
 
     if is_state('containerd.nvidia.available'):
         context['runtime'] = 'nvidia-container-runtime'
