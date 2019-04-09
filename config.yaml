@@ -13,3 +13,8 @@ options:
 
       The value for this config must be a JSON array of credential objects, like this:
         [{"url": "https://my.registry:port", "username": "user", "password": "pass"}]
+  gpu_driver:
+    type: string
+    default: "auto"
+    description: |
+      Override GPU driver installation.  Options are "auto", "nvidia", "none".

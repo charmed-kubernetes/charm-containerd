@@ -7,7 +7,7 @@ from subprocess import check_call, check_output, CalledProcessError
 from charms.apt import purge
 
 from charms.reactive import endpoint_from_flag
-from charms.reactive import when, when_not, set_state, is_state
+from charms.reactive import when, when_not, set_state, is_state, remove_state
 
 from charmhelpers.core import host
 from charmhelpers.core.templating import render
@@ -47,16 +47,35 @@ def install_containerd():
     config_changed()
 
 
-@when_not('containerd.nvidia.available')
 @when_not('containerd.nvidia.ready')
+@when_not('containerd.nvidia.available')
 def check_for_gpu():
     """
     Check if an Nvidia GPU
     exists.
     """
-    out = check_output(['lspci', '-nnk']).rstrip()
-    if out.decode('utf-8').lower().count('nvidia') > 0:
-        set_state('containerd.nvidia.available')
+    valid_options = [
+        'auto',
+        'none',
+        'nvidia'
+    ]
+
+    driver_config = config().get('gpu_driver')
+    if driver_config not in valid_options:
+        status_set(
+            'blocked',
+            '{} is an invalid option for gpu_driver'.format(
+                driver_config
+            )
+        )
+        return
+
+    out = check_output(['lspci', '-nnk']).rstrip().decode('utf-8').lower()
+
+    if driver_config != 'none':
+        if (out.count('nvidia') > 0 and driver_config == 'auto') \
+                or (driver_config == 'nvidia'):
+            set_state('containerd.nvidia.available')
 
 
 @when('containerd.nvidia.available')
@@ -79,18 +98,18 @@ def configure_nvidia():
         f.write(
             'deb '
             'https://nvidia.github.io/libnvidia-container/{}/$(ARCH) /\n'
-                .format(release)
+            .format(release)
         )
         f.write(
             'deb '
             'https://nvidia.github.io/nvidia-container-runtime/{}/$(ARCH) /\n'
-                .format(release)
+            .format(release)
         )
 
     cuda_gpg_key = requests.get(
         'https://developer.download.nvidia.com/'
         'compute/cuda/repos/{}/x86_64/7fa2af80.pub'
-            .format(release.replace('.', ''))
+        .format(release.replace('.', ''))
     ).text
     import_key(cuda_gpg_key)
     with open('/etc/apt/sources.list.d/cuda.list', 'w') as f:
@@ -98,7 +117,7 @@ def configure_nvidia():
             'deb '
             'http://developer.download.nvidia.com/'
             'compute/cuda/repos/{}/x86_64 /\n'
-                .format(release.replace('.', ''))
+            .format(release.replace('.', ''))
         )
 
     apt_update()
@@ -120,6 +139,18 @@ def purge_containerd():
     :returns: None
     """
     purge('containerd')
+
+
+@when('config.changed.gpu_driver')
+def gpu_config_changed():
+    """
+    Remove the GPU states when the config
+    is changed.
+
+    :returns: None
+    """
+    remove_state('containerd.nvidia.ready')
+    remove_state('containerd.nvidia.available')
 
 
 @when('config.changed')
