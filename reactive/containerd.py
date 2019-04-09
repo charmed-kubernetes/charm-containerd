@@ -7,7 +7,7 @@ from subprocess import check_call, check_output, CalledProcessError
 from charms.apt import purge
 
 from charms.reactive import endpoint_from_flag
-from charms.reactive import when, when_not, set_state, is_state
+from charms.reactive import when, when_not, set_state, is_state, remove_state
 
 from charmhelpers.core import host
 from charmhelpers.core.templating import render
@@ -47,18 +47,35 @@ def install_containerd():
     config_changed()
 
 
-@when_not('containerd.nvidia.available')
 @when_not('containerd.nvidia.ready')
+@when_not('containerd.nvidia.available')
 def check_for_gpu():
     """
     Check if an Nvidia GPU
     exists.
     """
-    cfg = config()
+    valid_options = [
+        'auto',
+        'none',
+        'nvidia'
+    ]
+
+    driver_config = config().get('gpu_driver')
+    if driver_config not in valid_options:
+        status_set(
+            'blocked',
+            '{} is an invalid option for gpu_driver'.format(
+                driver_config
+            )
+        )
+        return
+
     out = check_output(['lspci', '-nnk']).rstrip().decode('utf-8').lower()
 
-    if out.count('nvidia') > 0 and not cfg.get('disable_gpu'):
-        set_state('containerd.nvidia.available')
+    if driver_config != 'none':
+        if (out.count('nvidia') > 0 and driver_config == 'auto') \
+                or (driver_config == 'nvidia'):
+            set_state('containerd.nvidia.available')
 
 
 @when('containerd.nvidia.available')
@@ -122,6 +139,18 @@ def purge_containerd():
     :returns: None
     """
     purge('containerd')
+
+
+@when('config.changed.gpu_driver')
+def gpu_config_changed():
+    """
+    Remove the GPU states when the config
+    is changed.
+
+    :returns: None
+    """
+    remove_state('containerd.nvidia.ready')
+    remove_state('containerd.nvidia.available')
 
 
 @when('config.changed')
