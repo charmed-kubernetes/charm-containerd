@@ -7,7 +7,9 @@ from subprocess import check_call, check_output, CalledProcessError
 from charms.apt import purge
 
 from charms.reactive import endpoint_from_flag
-from charms.reactive import when, when_not, set_state, is_state, remove_state
+from charms.reactive import (
+    when, when_not, when_any, set_state, is_state, remove_state
+)
 
 from charmhelpers.core import host
 from charmhelpers.core.templating import render
@@ -191,6 +193,41 @@ def config_changed():
 
     else:
         status_set('blocked', 'Container runtime not available.')
+
+
+@when_any('config.changed.http_proxy', 'config.changed.https_proxy',
+          'config.changed.no_proxy')
+@when('containerd.ready')
+def proxy_changed():
+    """
+    Apply new proxy settings.
+
+    :returns: None
+    """
+    context = config()
+    service_file = 'proxy.conf'
+    service_directory = '/etc/systemd/system/containerd.service.d'
+    service_path = os.path.join(service_directory, service_file)
+
+    if context.get('http_proxy') or \
+            context.get('https_proxy') or context.get('no_proxy'):
+
+        os.makedirs(service_directory, exist_ok=True)
+
+        render(
+            service_file,
+            service_path,
+            context
+        )
+
+    else:
+        try:
+            os.remove(service_path)
+        except FileNotFoundError:
+            return  # We don't need to restart the daemon.
+
+    check_call(['systemctl', 'daemon-reload'])
+    host.service_restart('containerd.service')
 
 
 @when('containerd.ready')
