@@ -30,7 +30,7 @@ def _check_containerd():
             'c',
             'ls'
         ])
-    except CalledProcessError:
+    except (FileNotFoundError, CalledProcessError):
         return False
 
     return True
