@@ -18,6 +18,11 @@ options:
     default: "auto"
     description: |
       Override GPU driver installation.  Options are "auto", "nvidia", "none".
+  shim:
+    type: string
+    default: "containerd-shim"
+    description: |
+      Set a custom containerd shim.
   http_proxy:
      type: string
      default: ""
