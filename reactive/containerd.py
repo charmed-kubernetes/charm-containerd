@@ -6,6 +6,8 @@ from subprocess import check_call, check_output, CalledProcessError
 
 from charms.apt import purge
 
+from charms.layer import snap
+
 from charms.reactive import endpoint_from_flag
 from charms.reactive import (
     when, when_not, when_any, set_state, is_state, remove_state
@@ -46,6 +48,8 @@ def install_containerd():
 
     :returns: None
     """
+    snap.install('core')
+    snap.install('kata-containers')
     config_changed()
 
 
