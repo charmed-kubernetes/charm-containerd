@@ -71,7 +71,7 @@ oom_score = 0
   [plugins.diff-service]
     default = ["walking"]
   [plugins.linux]
-    shim = "containerd-shim"
+    shim = "{{ shim }}"
     runtime = "{{ runtime }}"
     runtime_root = ""
     no_shim = false
