@@ -1,9 +1,4 @@
 options:
-  install_sources:
-    description: |
-      Set install source.
-    type: string
-    default: ppa:mwhudson/devirt
   custom_registries:
     type: string
     default: "[]"
