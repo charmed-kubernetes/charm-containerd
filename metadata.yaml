@@ -1,4 +1,4 @@
-name: containerd
+name: containerd-kata
 summary: Containerd container runtime subordinate
 maintainers:
   - Joe Borg <joseph.borg@canonical.com>

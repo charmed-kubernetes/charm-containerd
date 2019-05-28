@@ -6,8 +6,6 @@ from subprocess import check_call, check_output, CalledProcessError
 
 from charms.apt import purge
 
-from charms.layer import snap
-
 from charms.reactive import endpoint_from_flag
 from charms.reactive import (
     when, when_not, when_any, set_state, is_state, remove_state
@@ -37,8 +35,41 @@ def _check_containerd():
 
     return True
 
+@when_not('kata.installed')
+def install_kata():
+    """
+    Install the Kata  container 
+    runtime.
+
+    :returns: None
+    """
+    dist = host.lsb_release()
+    release = '{}_{}'.format(
+        dist['DISTRIB_ID'],
+        dist['DISTRIB_RELEASE']
+    )
+
+    arch = check_output(['arch']).decode().strip()
+
+    gpg_key = requests.get(
+        'http://download.opensuse.org/repositories/home:/katacontainers:/'
+        'releases:/{}:/master/x{}/Release.key'.format(arch, release)).text
+    import_key(gpg_key)
+
+    with open('/etc/apt/sources.list.d/kata-containers.list', 'w') as f:
+        f.write(
+            'deb http://download.opensuse.org/repositories/home:/'
+            'katacontainers:/releases:/{}:/master/x{}/ /'
+            .format(arch, release)
+        )
+
+    apt_update()
+    apt_install(['kata-runtime', 'kata-proxy', 'kata-shim'])
+    set_state('kata.installed')
+
 
 @when('apt.installed.containerd')
+@when('kata.installed')
 @when_not('containerd.ready')
 def install_containerd():
     """
@@ -48,8 +79,6 @@ def install_containerd():
 
     :returns: None
     """
-    snap.install('core')
-    snap.install('kata-containers')
     config_changed()
 
 
