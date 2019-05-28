@@ -1,9 +1,4 @@
 options:
-  install_sources:
-    description: |
-      Set install source.
-    type: string
-    default: ppa:mwhudson/devirt
   custom_registries:
     type: string
     default: "[]"
@@ -18,6 +13,11 @@ options:
     default: "auto"
     description: |
       Override GPU driver installation.  Options are "auto", "nvidia", "none".
+  runtime:
+    type: string
+    default: "auto"
+    description: |
+      Set a custom containerd runtime.  Set "auto" to select based on hardware.
   shim:
     type: string
     default: "containerd-shim"

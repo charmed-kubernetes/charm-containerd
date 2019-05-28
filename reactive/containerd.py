@@ -175,7 +175,8 @@ def config_changed():
     context['custom_registries'] = \
         json.loads(context['custom_registries'])
 
-    if is_state('containerd.nvidia.available'):
+    if is_state('containerd.nvidia.available') \
+            and context.get('runtime') == 'auto':
         context['runtime'] = 'nvidia-container-runtime'
     else:
         context['runtime'] = 'runc'
