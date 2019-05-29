@@ -36,24 +36,28 @@ oom_score = 0
     max_container_log_line_size = 16384
     [plugins.cri.containerd]
       no_pivot = false
-    [plugins.cri.containerd.runtimes]
-      [plugins.cri.containerd.runtimes.runc]
-         runtime_type = "io.containerd.runc.v1"
-         [plugins.cri.containerd.runtimes.runc.options]
-           NoPivotRoot = false
-           NoNewKeyring = false
-           ShimCgroup = ""
-           IoUid = 0
-           IoGid = 0
-           BinaryName = "runc"
-           Root = ""
-           CriuPath = ""
-           SystemdCgroup = false
-      [plugins.cri.containerd.runtimes.kata]
+      [plugins.cri.containerd.default_runtime]
         runtime_type = "io.containerd.runtime.v1.linux"
-        [plugins.cri.containerd.runtimes.kata.options]
-          Runtime = "kata-runtime"
-          RuntimeRoot = "/usr/bin/kata-runtime"
+      [plugins.cri.containerd.untrusted_workload_runtime]
+        runtime_type = "io.containerd.kata.v2"
+      [plugins.cri.containerd.runtimes]
+        [plugins.cri.containerd.runtimes.runc]
+          runtime_type = "io.containerd.runc.v1"
+          [plugins.cri.containerd.runtimes.runc.options]
+            NoPivotRoot = false
+            NoNewKeyring = false
+            ShimCgroup = ""
+            IoUid = 0
+            IoGid = 0
+            BinaryName = "runc"
+            Root = ""
+            CriuPath = ""
+            SystemdCgroup = false
+        [plugins.cri.containerd.runtimes.kata]
+          runtime_type = "io.containerd.runtime.v1.linux"
+          [plugins.cri.containerd.runtimes.kata.options]
+            Runtime = "kata-runtime"
+            RuntimeRoot = "/usr/bin/kata-runtime"
     [plugins.cri.registry]
       [plugins.cri.registry.mirrors]
         [plugins.cri.registry.mirrors."docker.io"]
