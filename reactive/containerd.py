@@ -13,9 +13,13 @@ from charms.reactive import (
 
 from charmhelpers.core import host
 from charmhelpers.core.templating import render
-from charmhelpers.core.hookenv import status_set, config
+from charmhelpers.core.hookenv import status_set, config, resource_get
 
 from charmhelpers.fetch import apt_install, apt_update, import_key
+
+
+class ResourceMissing(Exception):
+    pass
 
 
 def _check_containerd():
@@ -51,20 +55,33 @@ def install_kata():
 
     arch = check_output(['arch']).decode().strip()
 
-    gpg_key = requests.get(
-        'http://download.opensuse.org/repositories/home:/katacontainers:/'
-        'releases:/{}:/master/x{}/Release.key'.format(arch, release)).text
-    import_key(gpg_key)
+    try:
+        gpg_key = requests.get(
+            'http://download.opensuse.org/repositories/home:/katacontainers:/'
+            'releases:/{}:/master/x{}/Release.key'.format(arch, release)).text
+        import_key(gpg_key)
 
-    with open('/etc/apt/sources.list.d/kata-containers.list', 'w') as f:
-        f.write(
-            'deb http://download.opensuse.org/repositories/home:/'
-            'katacontainers:/releases:/{}:/master/x{}/ /'
-            .format(arch, release)
-        )
+        with open('/etc/apt/sources.list.d/kata-containers.list', 'w') as f:
+            f.write(
+                'deb http://download.opensuse.org/repositories/home:/'
+                'katacontainers:/releases:/{}:/master/x{}/ /'
+                .format(arch, release)
+            )
 
-    apt_update()
-    apt_install(['kata-runtime', 'kata-proxy', 'kata-shim'])
+        apt_update()
+        apt_install(['kata-runtime', 'kata-proxy', 'kata-shim'])
+
+    except requests.Timeout:  # Probably no internet connection.
+        archive = resource_get('kata-archive')
+
+        if not archive:
+            message = 'Missing kata-archive resource'
+            status_set('blocked', message)
+            raise ResourceMissing(message)
+
+        check_call(['tar', '-xvf', archive, '-C', '/tmp'])
+        check_call('apt-get install -y /tmp/archives/*.deb', shell=True)
+
     set_state('kata.installed')
 
 

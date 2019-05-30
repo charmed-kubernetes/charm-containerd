@@ -20,3 +20,8 @@ requires:
   containerd:
     interface: container-runtime
     scope: container
+resources:
+  kata-archive:
+    type: file
+    filename: kata-archive.tar.gz
+    description: offline archive of kata debs
