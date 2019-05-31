@@ -1,0 +1,38 @@
+#!/usr/local/sbin/charm-env python3
+
+from charmhelpers.core.hookenv import (
+    action_set,
+    action_fail
+)
+
+from charmhelpers.fetch import (
+    apt_install,
+    apt_update,
+    apt_hold,
+    apt_unhold
+)
+
+from charmhelpers.core import host
+
+
+def main():
+    """
+    :return: None
+    """
+    containerd = 'containerd'
+
+    try:
+        apt_update(fatal=True)
+        apt_unhold(containerd)
+        apt_install(containerd, fatal=True)
+        apt_hold(containerd)
+        host.service_reload(containerd)
+
+        action_set({'runtime': containerd})
+
+    except Exception as e:
+        action_fail(e)
+
+
+if __name__ == '__main__':
+    main()
