@@ -1,0 +1,2 @@
+upgrade-containerd:
+    description: Force upgrades Containerd to latest repository version
