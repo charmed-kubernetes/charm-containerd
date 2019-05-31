@@ -39,6 +39,7 @@ def _check_containerd():
 
     return True
 
+
 @when_not('kata.installed')
 def install_kata():
     """
@@ -55,7 +56,9 @@ def install_kata():
 
     arch = check_output(['arch']).decode().strip()
 
-    try:
+    archive = resource_get('kata-archive')
+
+    if not archive or os.path.getsize(archive) == 0:
         gpg_key = requests.get(
             'http://download.opensuse.org/repositories/home:/katacontainers:/'
             'releases:/{}:/master/x{}/Release.key'.format(arch, release)).text
@@ -71,16 +74,14 @@ def install_kata():
         apt_update()
         apt_install(['kata-runtime', 'kata-proxy', 'kata-shim'])
 
-    except requests.Timeout:  # Probably no internet connection.
-        archive = resource_get('kata-archive')
+    else:
+        unpack = '/tmp/kata-debs'
 
-        if not archive:
-            message = 'Missing kata-archive resource'
-            status_set('blocked', message)
-            raise ResourceMissing(message)
+        if not os.path.isdir(unpack):
+            os.makedirs(unpack, exist_ok=True)
 
-        check_call(['tar', '-xvf', archive, '-C', '/tmp'])
-        check_call('apt-get install -y /tmp/archives/*.deb', shell=True)
+        check_call(['tar', '-xvf', archive, '-C', unpack])
+        check_call('apt-get install -y {}/*.deb'.format(unpack), shell=True)
 
     set_state('kata.installed')
 
