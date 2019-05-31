@@ -32,14 +32,14 @@ options:
      type: string
      default: ""
      description: |
-        URL to use for HTTP_PROXY to be used by Docker. Useful in
+        URL to use for HTTP_PROXY to be used by Containerd. Useful in
         egress-filtered environments where a proxy is the only option for
         accessing the registry to pull images.
   https_proxy:
     type: string
     default: ""
     description: |
-        URL to use for HTTPS_PROXY to be used by Docker. Useful in
+        URL to use for HTTPS_PROXY to be used by Containerd. Useful in
         egress-filtered environments where a proxy is the only option for
         accessing the registry to pull images.
   no_proxy:
