@@ -6,7 +6,3 @@ includes:
   - 'layer:apt'
   - 'layer:container-runtime-common'
   - 'interface:container-runtime'
-options:
-  basic:
-    packages:
-      - containerd

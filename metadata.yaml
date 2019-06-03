@@ -21,7 +21,11 @@ requires:
     interface: container-runtime
     scope: container
 resources:
+  containerd-archive:
+    type: file
+    filename: containerd-archive.tar.gz
+    description: Offline archive of containerd debs
   kata-archive:
     type: file
     filename: kata-archive.tar.gz
-    description: offline archive of kata debs
+    description: Offline archive of kata debs

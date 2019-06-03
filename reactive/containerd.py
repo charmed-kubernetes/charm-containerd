@@ -18,10 +18,6 @@ from charmhelpers.core.hookenv import status_set, config, resource_get
 from charmhelpers.fetch import apt_install, apt_update, import_key
 
 
-class ResourceMissing(Exception):
-    pass
-
-
 def _check_containerd():
     """
     Check that containerd is running.
@@ -43,8 +39,7 @@ def _check_containerd():
 @when_not('kata.installed')
 def install_kata():
     """
-    Install the Kata  container 
-    runtime.
+    Install the Kata container runtime.
 
     :returns: None
     """
@@ -59,6 +54,7 @@ def install_kata():
     archive = resource_get('kata-archive')
 
     if not archive or os.path.getsize(archive) == 0:
+        status_set('maintenance', 'Installing Kata via apt')
         gpg_key = requests.get(
             'http://download.opensuse.org/repositories/home:/katacontainers:/'
             'releases:/{}:/master/x{}/Release.key'.format(arch, release)).text
@@ -75,6 +71,7 @@ def install_kata():
         apt_install(['kata-runtime', 'kata-proxy', 'kata-shim'])
 
     else:
+        status_set('maintenance', 'Installing Kata via resource')
         unpack = '/tmp/kata-debs'
 
         if not os.path.isdir(unpack):
@@ -86,18 +83,36 @@ def install_kata():
     set_state('kata.installed')
 
 
-@when('apt.installed.containerd')
 @when('kata.installed')
 @when_not('containerd.ready')
+@when_not('containerd.installed')
 def install_containerd():
     """
-    Actual install is handled
-    by `layer-apt`.  We'll just
-    configure it.
+    Check to see if there's an archive
+    attached.  If so, unpack and install.
+    If not, install via apt.
 
     :returns: None
     """
-    config_changed()
+    archive = resource_get('containerd-archive')
+
+    if not archive or os.path.getsize(archive) == 0:
+        status_set('maintenance', 'Installing containerd via apt')
+        apt_update()
+        apt_install(['containerd'])
+
+    else:
+        status_set('maintenance', 'Installing containerd via resource')
+        unpack = '/tmp/containerd-debs'
+
+        if not os.path.isdir(unpack):
+            os.makedirs(unpack, exist_ok=True)
+
+        check_call(['tar', '-xvf', archive, '-C', unpack])
+        check_call('apt-get install -y {}/*.deb'.format(unpack), shell=True)
+
+    set_state('config.changed')
+    set_state('containerd.installed')
 
 
 @when_not('containerd.nvidia.ready')
