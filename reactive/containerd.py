@@ -13,7 +13,7 @@ from charms.reactive import (
 
 from charmhelpers.core import host
 from charmhelpers.core.templating import render
-from charmhelpers.core.hookenv import status_set, config
+from charmhelpers.core.hookenv import status_set, config, log
 
 from charmhelpers.fetch import apt_install, apt_update, import_key
 
@@ -163,7 +163,9 @@ def config_changed():
 
     :returns: None
     """
-    context = config()
+    # Create "dumb" context based on Config
+    # to avoid triggering config.changed.
+    context = dict(config())
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
@@ -186,7 +188,8 @@ def config_changed():
         context
     )
 
-    host.service_restart('containerd')
+    log('Restarting containerd.service')
+    host.service_restart('containerd.service')
 
     if _check_containerd():
         status_set('active', 'Container runtime available.')
@@ -205,7 +208,9 @@ def proxy_changed():
 
     :returns: None
     """
-    context = config()
+    # Create "dumb" context based on Config
+    # to avoid triggering config.changed.
+    context = dict(config())
     service_file = 'proxy.conf'
     service_directory = '/etc/systemd/system/containerd.service.d'
     service_path = os.path.join(service_directory, service_file)
@@ -228,12 +233,13 @@ def proxy_changed():
             return  # We don't need to restart the daemon.
 
     check_call(['systemctl', 'daemon-reload'])
+    log('Restarting containerd.service')
     host.service_restart('containerd.service')
 
 
 @when('containerd.ready')
 @when('endpoint.containerd.joined')
-def pubish_config():
+def publish_config():
     """
     Pass configuration to principal
     charm.
