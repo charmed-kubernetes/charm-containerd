@@ -110,8 +110,12 @@ def install_containerd():
         check_call(['tar', '-xvf', archive, '-C', unpack])
         check_call('apt-get install -y {}/*.deb'.format(unpack), shell=True)
 
-    set_state('config.changed')
-    set_state('containerd.installed')
+    if _check_containerd():
+        status_set('active', 'Container runtime available.')
+        set_state('config.changed')
+        set_state('containerd.installed')
+    else:
+        status_set('blocked', 'Container runtime not available.')
 
 
 @when_not('containerd.nvidia.ready')
@@ -261,7 +265,10 @@ def config_changed():
         set_state('containerd.ready')
 
     else:
-        status_set('blocked', 'Container runtime not available.')
+        if not is_state('containerd.installed'):
+            remove_state('containerd.ready')
+        else:
+            status_set('blocked', 'Container runtime not available.')
 
 
 @when_any('config.changed.http_proxy', 'config.changed.https_proxy',
