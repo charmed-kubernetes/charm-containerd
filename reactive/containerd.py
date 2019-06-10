@@ -112,8 +112,8 @@ def install_containerd():
 
     if _check_containerd():
         status_set('active', 'Container runtime available.')
-        set_state('config.changed')
         set_state('containerd.installed')
+        config_changed()
     else:
         status_set('blocked', 'Container runtime not available.')
 
