@@ -3,11 +3,20 @@ import json
 import requests
 import traceback
 
-from subprocess import check_call, check_output, CalledProcessError
+from subprocess import (
+    check_call,
+    check_output,
+    CalledProcessError
+)
 
 from charms.reactive import endpoint_from_flag
 from charms.reactive import (
-    when, when_not, when_any, set_state, is_state, remove_state
+    when,
+    when_not,
+    when_any,
+    set_state,
+    is_state,
+    remove_state
 )
 
 from charms.layer.container_runtime_common import (
@@ -20,7 +29,12 @@ from charmhelpers.core import host
 from charmhelpers.core import unitdata
 from charmhelpers.core.templating import render
 from charmhelpers.core.host import install_ca_cert
-from charmhelpers.core.hookenv import status_set, config, log
+from charmhelpers.core.hookenv import (
+    status_set,
+    config,
+    log,
+    env_proxy_settings
+)
 
 from charmhelpers.core.kernel import modprobe
 
@@ -253,6 +267,15 @@ def config_changed():
     # Create "dumb" context based on Config
     # to avoid triggering config.changed.
     context = dict(config())
+
+    # If juju environment variables are defined, take precedent
+    # over config.yaml.
+    # See: https://github.com/dshcherb/charm-helpers/blob/eba3742de6a7023f22778ba58fbbb0ac212d2ea6/charmhelpers/core/hookenv.py#L1455
+    environment_config = env_proxy_settings()
+    if environment_config is not None:
+        config.update(environment_config)
+
+
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
