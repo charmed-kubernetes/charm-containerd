@@ -273,7 +273,7 @@ def config_changed():
     # See: https://github.com/dshcherb/charm-helpers/blob/eba3742de6a7023f22778ba58fbbb0ac212d2ea6/charmhelpers/core/hookenv.py#L1455
     environment_config = env_proxy_settings()
     if environment_config is not None:
-        config.update(environment_config)
+        config().update(environment_config)
 
 
     config_file = 'config.toml'
