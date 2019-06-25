@@ -48,7 +48,6 @@ def install_containerd():
 
     :returns: None
     """
-    modprobe('br_netfilter', persist=True)
     config_changed()
 
 
@@ -255,3 +254,10 @@ def publish_config():
         runtime='remote',  # TODO handle in k8s worker.
         nvidia_enabled=is_state('containerd.nvidia.ready')
     )
+
+
+@when_not('containerd.br_netfilter.enabled')
+def enable_br_netfilter_module():
+    # Fixes https://github.com/kubernetes/kubernetes/issues/21613
+    modprobe('br_netfilter', persist=True)
+    set_state('containerd.br_netfilter.enabled')
