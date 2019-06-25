@@ -15,6 +15,8 @@ from charmhelpers.core import host
 from charmhelpers.core.templating import render
 from charmhelpers.core.hookenv import status_set, config, log
 
+from charmhelpers.core.kernel import modprobe
+
 from charmhelpers.fetch import apt_install, apt_update, import_key
 
 
@@ -46,6 +48,7 @@ def install_containerd():
 
     :returns: None
     """
+    modprobe('br_netfilter', persist=True)
     config_changed()
 
 
