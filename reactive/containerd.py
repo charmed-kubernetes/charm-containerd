@@ -15,6 +15,8 @@ from charmhelpers.core import host
 from charmhelpers.core.templating import render
 from charmhelpers.core.hookenv import status_set, config, log
 
+from charmhelpers.core.kernel import modprobe
+
 from charmhelpers.fetch import apt_install, apt_update, import_key
 
 
@@ -252,3 +254,10 @@ def publish_config():
         runtime='remote',  # TODO handle in k8s worker.
         nvidia_enabled=is_state('containerd.nvidia.ready')
     )
+
+
+@when_not('containerd.br_netfilter.enabled')
+def enable_br_netfilter_module():
+    # Fixes https://github.com/kubernetes/kubernetes/issues/21613
+    modprobe('br_netfilter', persist=True)
+    set_state('containerd.br_netfilter.enabled')
