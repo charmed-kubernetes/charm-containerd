@@ -258,6 +258,15 @@ def publish_config():
 
 @when_not('containerd.br_netfilter.enabled')
 def enable_br_netfilter_module():
-    # Fixes https://github.com/kubernetes/kubernetes/issues/21613
-    modprobe('br_netfilter', persist=True)
+    """
+    Enable br_netfilter to work
+    around https://github.com/kubernetes/kubernetes/issues/21613
+
+    :returns: None
+    """
+    try:
+        modprobe('br_netfilter', persist=True)
+    except Exception as e:  # Kernel probably doesn't support this.
+        log(e)
+
     set_state('containerd.br_netfilter.enabled')
