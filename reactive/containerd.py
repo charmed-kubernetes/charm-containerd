@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import traceback
 
 from subprocess import check_call, check_output, CalledProcessError
 
@@ -266,7 +267,11 @@ def enable_br_netfilter_module():
     """
     try:
         modprobe('br_netfilter', persist=True)
-    except Exception as e:  # Kernel probably doesn't support this.
-        log(e)
-
+    except Exception:
+        log(traceback.format_exc())
+        if host.is_container():
+            log('LXD detected, ignoring failure to load br_netfilter')
+        else:
+            log('LXD not detected, will retry loading br_netfilter')
+            return
     set_state('containerd.br_netfilter.enabled')
