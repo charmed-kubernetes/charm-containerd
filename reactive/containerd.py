@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import traceback
 
 from subprocess import check_call, check_output, CalledProcessError
 
@@ -12,9 +13,10 @@ from charms.reactive import (
 )
 
 from charmhelpers.core import host
+from charmhelpers.core.kernel import modprobe
 from charmhelpers.core.templating import render
-from charmhelpers.core.hookenv import status_set, config, log, resource_get
 from charmhelpers.fetch import apt_install, apt_update, import_key
+from charmhelpers.core.hookenv import status_set, config, log, resource_get
 
 
 def _check_containerd():
@@ -324,3 +326,23 @@ def publish_config():
         runtime='remote',  # TODO handle in k8s worker.
         nvidia_enabled=is_state('containerd.nvidia.ready')
     )
+
+
+@when_not('containerd.br_netfilter.enabled')
+def enable_br_netfilter_module():
+    """
+    Enable br_netfilter to work
+    around https://github.com/kubernetes/kubernetes/issues/21613
+
+    :returns: None
+    """
+    try:
+        modprobe('br_netfilter', persist=True)
+    except Exception:
+        log(traceback.format_exc())
+        if host.is_container():
+            log('LXD detected, ignoring failure to load br_netfilter')
+        else:
+            log('LXD not detected, will retry loading br_netfilter')
+            return
+    set_state('containerd.br_netfilter.enabled')

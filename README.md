@@ -27,7 +27,7 @@ the Containerd subordinate charm and then relate it to the
 principal charm.
 
 ```
-juju deploy containerd
+juju deploy cs:~containers/containerd
 juju add-relation containerd [principal charm]
 ```
 
