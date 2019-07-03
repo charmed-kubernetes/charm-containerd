@@ -39,6 +39,26 @@ def _check_containerd():
     return True
 
 
+@when_not('containerd.br_netfilter.enabled')
+def enable_br_netfilter_module():
+    """
+    Enable br_netfilter to work around
+    https://github.com/kubernetes/kubernetes/issues/21613
+
+    :returns: None
+    """
+    try:
+        modprobe('br_netfilter', persist=True)
+    except Exception:
+        log(traceback.format_exc())
+        if host.is_container():
+            log('LXD detected, ignoring failure to load br_netfilter')
+        else:
+            log('LXD not detected, will retry loading br_netfilter')
+            return
+    set_state('containerd.br_netfilter.enabled')
+
+
 @when('apt.installed.containerd')
 @when_not('containerd.ready')
 def install_containerd():
@@ -256,22 +276,3 @@ def publish_config():
         nvidia_enabled=is_state('containerd.nvidia.ready')
     )
 
-
-@when_not('containerd.br_netfilter.enabled')
-def enable_br_netfilter_module():
-    """
-    Enable br_netfilter to work
-    around https://github.com/kubernetes/kubernetes/issues/21613
-
-    :returns: None
-    """
-    try:
-        modprobe('br_netfilter', persist=True)
-    except Exception:
-        log(traceback.format_exc())
-        if host.is_container():
-            log('LXD detected, ignoring failure to load br_netfilter')
-        else:
-            log('LXD not detected, will retry loading br_netfilter')
-            return
-    set_state('containerd.br_netfilter.enabled')
