@@ -60,9 +60,11 @@ oom_score = 0
     {% if custom_registries %}
       [plugins.cri.registry.auths]
       {% for registry in custom_registries %}
+        {% if registry.username and registry.password  %}
         [plugins.cri.registry.auths."{{ registry.url }}"]
           username = "{{ registry.username }}"
           password = "{{ registry.password }}"
+        {% endif %}
       {% endfor %}
     {% endif %}
     [plugins.cri.x509_key_pair_streaming]

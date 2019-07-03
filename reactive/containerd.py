@@ -12,13 +12,20 @@ from charms.reactive import (
     when, when_not, when_any, set_state, is_state, remove_state
 )
 
+from charms.layer.container_runtime_common import manage_registry_certs
+
 from charmhelpers.core import host
+from charmhelpers.core import unitdata
 from charmhelpers.core.templating import render
+from charmhelpers.core.host import install_ca_cert
 from charmhelpers.core.hookenv import status_set, config, log
 
 from charmhelpers.core.kernel import modprobe
 
 from charmhelpers.fetch import apt_install, apt_update, import_key
+
+
+DB = unitdata.kv()
 
 
 def _check_containerd():
@@ -276,3 +283,89 @@ def publish_config():
         nvidia_enabled=is_state('containerd.nvidia.ready')
     )
 
+
+@when('endpoint.docker-registry.ready')
+@when_not('containerd.registry.configured')
+def configure_registry():
+    """
+    Add docker registry config when present.
+
+    :return: None
+    """
+    registry = endpoint_from_flag('endpoint.docker-registry.ready')
+
+    # Handle TLS data
+    cert_subdir = registry.registry_netloc
+    if registry.has_tls():
+        # Ensure the CA that signed our registry cert is trusted.
+        install_ca_cert(registry.tls_ca, name='juju-docker-registry')
+
+    manage_registry_certs(cert_subdir, remove=False)
+    # todo: add certs to config https://github.com/containerd/cri/blob/master/docs/registry.md
+
+    # Handle auth data.
+    if registry.has_auth_basic():
+        #  Set docker registry with auth.
+        docker_registry = {
+            "url": registry.registry_netloc,
+            "username": registry.basic_user,
+            "password": registry.basic_password
+        }
+    else:
+        #  Set docker registry without auth.
+        docker_registry = {"url": registry.registry_netloc}
+
+    cfg = config()
+
+    custom_registries = json.loads(cfg['custom_registries'])
+    custom_registries.append(docker_registry)
+
+    cfg['custom_registries'] = json.dumps(custom_registries)
+
+    # NB: store our netloc so we can clean up if the registry goes away
+    DB.set('registry_netloc', registry.registry_netloc)
+    set_state('containerd.registry.configured')
+
+
+@when('endpoint.docker-registry.changed',
+      'containerd.registry.configured')
+def reconfigure_registry():
+    """
+    Signal to update the registry config when something changes.
+
+    :return: None
+    """
+    remove_state('containerd.registry.configured')
+
+
+@when('containerd.registry.configured')
+@when_not('endpoint.docker-registry.joined')
+def remove_registry():
+    """
+    Remove registry config when the registry is no longer present.
+
+    :return: None
+    """
+    netloc = DB.get('registry_netloc', None)
+
+    if netloc:
+        # remove tls-related data
+        cert_subdir = netloc
+
+        cfg = config()
+
+        custom_registries = json.loads(cfg['custom_registries'])
+        custom_registries_cleaned_up = []
+
+        for registry in custom_registries:
+            if registry.url != netloc:
+                custom_registries_cleaned_up.append(registry)
+
+        cfg['custom_registries'] = json.dumps(custom_registries_cleaned_up)
+
+
+        # Remove auth-related data.
+        log('Disabling auth for docker registry: {}.'.format(netloc))
+        manage_registry_certs(cert_subdir, remove=True)
+
+    remove_state('containerd.registry.configured')
