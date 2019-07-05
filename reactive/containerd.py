@@ -46,6 +46,23 @@ def _check_containerd():
     return True
 
 
+def merge_custom_registries(custom_registries):
+    """
+    Merge custom registries and Docker
+    registries from relation.
+
+    :return: Dictionary merge registries
+    """
+    registries = []
+    registries += json.loads(custom_registries)
+
+    docker_registry = DB.get('registry', None)
+    if docker_registry:
+        registries.append(docker_registry)
+
+    return registries
+
+
 @when_not('containerd.br_netfilter.enabled')
 def enable_br_netfilter_module():
     """
@@ -199,9 +216,8 @@ def config_changed():
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
-    # Mutate the input string into a dictionary.
     context['custom_registries'] = \
-        json.loads(context['custom_registries'])
+        merge_custom_registries(context['custom_registries'])
 
     if is_state('containerd.nvidia.available') \
             and context.get('runtime') == 'auto':
@@ -315,15 +331,9 @@ def configure_registry():
         #  Set docker registry without auth.
         docker_registry = {"url": registry.registry_netloc}
 
-    cfg = config()
+    DB.set('registry', docker_registry)
 
-    custom_registries = json.loads(cfg['custom_registries'])
-    custom_registries.append(docker_registry)
-
-    cfg['custom_registries'] = json.dumps(custom_registries)
-
-    # NB: store our netloc so we can clean up if the registry goes away
-    DB.set('registry_netloc', registry.registry_netloc)
+    set_state('config.changed')
     set_state('containerd.registry.configured')
 
 
@@ -346,26 +356,19 @@ def remove_registry():
 
     :return: None
     """
-    netloc = DB.get('registry_netloc', None)
+    docker_registry = DB.get('registry', None)
 
-    if netloc:
-        # remove tls-related data
-        cert_subdir = netloc
+    if docker_registry:
+        # Remove from DB.
+        DB.unset('registry')
 
-        cfg = config()
-
-        custom_registries = json.loads(cfg['custom_registries'])
-        custom_registries_cleaned_up = []
-
-        for registry in custom_registries:
-            if registry.url != netloc:
-                custom_registries_cleaned_up.append(registry)
-
-        cfg['custom_registries'] = json.dumps(custom_registries_cleaned_up)
-
+        # Remove tls-related data.
+        cert_subdir = docker_registry['url']
 
         # Remove auth-related data.
-        log('Disabling auth for docker registry: {}.'.format(netloc))
+        log('Disabling auth for docker registry: {}.'.format(
+            docker_registry['url']))
         manage_registry_certs(cert_subdir, remove=True)
 
+    set_state('config.changed')
     remove_state('containerd.registry.configured')
