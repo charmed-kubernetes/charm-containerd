@@ -51,7 +51,7 @@ def merge_custom_registries(custom_registries):
     Merge custom registries and Docker
     registries from relation.
 
-    :return: Dictionary merge registries
+    :return: List Dictionary merged registries
     """
     registries = []
     registries += json.loads(custom_registries)
