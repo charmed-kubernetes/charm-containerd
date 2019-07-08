@@ -37,7 +37,7 @@ def _check_containerd():
     """
     Check that containerd is running.
 
-    :returns: Boolean
+    :return: Boolean
     """
     try:
         check_call([
@@ -74,7 +74,7 @@ def enable_br_netfilter_module():
     Enable br_netfilter to work around
     https://github.com/kubernetes/kubernetes/issues/21613
 
-    :returns: None
+    :return: None
     """
     try:
         modprobe('br_netfilter', persist=True)
@@ -96,7 +96,7 @@ def install_containerd():
     by `layer-apt`.  We'll just
     configure it.
 
-    :returns: None
+    :return: None
     """
     config_changed()
 
@@ -190,7 +190,7 @@ def purge_containerd():
     Purge Containerd from the
     cluster.
 
-    :returns: None
+    :return: None
     """
     purge('containerd')
 
@@ -201,7 +201,7 @@ def gpu_config_changed():
     Remove the GPU states when the config
     is changed.
 
-    :returns: None
+    :return: None
     """
     remove_state('containerd.nvidia.ready')
     remove_state('containerd.nvidia.available')
@@ -213,7 +213,7 @@ def config_changed():
     Render the config template
     and restart the service.
 
-    :returns: None
+    :return: None
     """
     # Create "dumb" context based on Config
     # to avoid triggering config.changed.
@@ -257,7 +257,7 @@ def proxy_changed():
     """
     Apply new proxy settings.
 
-    :returns: None
+    :return: None
     """
     # Create "dumb" context based on Config
     # to avoid triggering config.changed.
@@ -295,7 +295,7 @@ def publish_config():
     Pass configuration to principal
     charm.
 
-    :returns: None
+    :return: None
     """
     endpoint = endpoint_from_flag('endpoint.containerd.joined')
     endpoint.set_config(
