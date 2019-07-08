@@ -335,7 +335,7 @@ def configure_registry():
 
     DB.set('registry', docker_registry)
 
-    set_state('config.changed')
+    config_changed()
     set_state('containerd.registry.configured')
 
 
