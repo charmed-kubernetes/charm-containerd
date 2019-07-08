@@ -12,7 +12,11 @@ from charms.reactive import (
     when, when_not, when_any, set_state, is_state, remove_state
 )
 
-from charms.layer.container_runtime_common import manage_registry_certs
+from charms.layer.container_runtime_common import (
+    ca_crt_path,
+    server_crt_path,
+    server_key_path
+)
 
 from charmhelpers.core import host
 from charmhelpers.core import unitdata
@@ -26,6 +30,7 @@ from charmhelpers.fetch import apt_install, apt_update, import_key
 
 
 DB = unitdata.kv()
+CERTIFICATE_DIRECTORY = '/root/cdk/containerd/certs'
 
 
 def _check_containerd():
@@ -310,26 +315,23 @@ def configure_registry():
     """
     registry = endpoint_from_flag('endpoint.docker-registry.ready')
 
-    # Handle TLS data
-    cert_subdir = registry.registry_netloc
+    docker_registry = {
+        'url': registry.registry_netloc
+    }
+
+    # Handle auth data.
+    if registry.has_auth_basic():
+        docker_registry['username'] = registry.basic_user,
+        docker_registry['password'] = registry.basic_password
+
+    # Handle TLS data.
     if registry.has_tls():
         # Ensure the CA that signed our registry cert is trusted.
         install_ca_cert(registry.tls_ca, name='juju-docker-registry')
 
-    manage_registry_certs(cert_subdir, remove=False)
-    # todo: add certs to config https://github.com/containerd/cri/blob/master/docs/registry.md
-
-    # Handle auth data.
-    if registry.has_auth_basic():
-        #  Set docker registry with auth.
-        docker_registry = {
-            "url": registry.registry_netloc,
-            "username": registry.basic_user,
-            "password": registry.basic_password
-        }
-    else:
-        #  Set docker registry without auth.
-        docker_registry = {"url": registry.registry_netloc}
+        docker_registry['ca'] = ca_crt_path
+        docker_registry['key'] = server_key_path
+        docker_registry['cert'] = server_crt_path
 
     DB.set('registry', docker_registry)
 
@@ -361,14 +363,15 @@ def remove_registry():
     if docker_registry:
         # Remove from DB.
         DB.unset('registry')
+        DB.flush()
 
         # Remove tls-related data.
-        cert_subdir = docker_registry['url']
+        cert_dir = os.path.join(CERTIFICATE_DIRECTORY, docker_registry['url'])
 
         # Remove auth-related data.
         log('Disabling auth for docker registry: {}.'.format(
             docker_registry['url']))
-        manage_registry_certs(cert_subdir, remove=True)
+        manage_registry_certs(cert_dir, remove=True)
 
     set_state('config.changed')
     remove_state('containerd.registry.configured')

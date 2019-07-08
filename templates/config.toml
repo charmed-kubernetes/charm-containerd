@@ -67,6 +67,17 @@ oom_score = 0
         {% endif %}
       {% endfor %}
     {% endif %}
+    {% if custom_registries %}
+      [plugins.cri.registry.tls_configs]
+      {% for registry in custom_registries %}
+        {% if registry.ca and registry.cert and registry.key  %}
+        [plugins.cri.registry.tls_configs."{{ registry.url }}"]
+          ca_file   = "{{ registry.ca }}"
+          cert_file = "{{ registry.cert }}"
+          key_file  = "{{ registry.key }}"
+        {% endif %}
+      {% endfor %}
+    {% endif %}
     [plugins.cri.x509_key_pair_streaming]
       tls_cert_file = ""
       tls_key_file = ""
