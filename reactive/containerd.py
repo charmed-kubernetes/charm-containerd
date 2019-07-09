@@ -329,9 +329,9 @@ def configure_registry():
         # Ensure the CA that signed our registry cert is trusted.
         install_ca_cert(registry.tls_ca, name='juju-docker-registry')
 
-        docker_registry['ca'] = ca_crt_path
-        docker_registry['key'] = server_key_path
-        docker_registry['cert'] = server_crt_path
+        docker_registry['ca'] = str(ca_crt_path)
+        docker_registry['key'] = str(server_key_path)
+        docker_registry['cert'] = str(server_crt_path)
 
     DB.set('registry', docker_registry)
 
