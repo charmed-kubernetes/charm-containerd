@@ -371,7 +371,6 @@ def remove_registry():
         # Remove auth-related data.
         log('Disabling auth for docker registry: {}.'.format(
             docker_registry['url']))
-        manage_registry_certs(cert_dir, remove=True)
 
     set_state('config.changed')
     remove_state('containerd.registry.configured')
