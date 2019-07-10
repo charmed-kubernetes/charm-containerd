@@ -368,5 +368,5 @@ def remove_registry():
         log('Disabling auth for docker registry: {}.'.format(
             docker_registry['url']))
 
-    set_state('config.changed')
+    config_changed()
     remove_state('containerd.registry.configured')

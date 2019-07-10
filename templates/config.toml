@@ -66,8 +66,6 @@ oom_score = 0
           password = "{{ registry.password }}"
         {% endif %}
       {% endfor %}
-    {% endif %}
-    {% if custom_registries %}
       [plugins.cri.registry.tls_configs]
       {% for registry in custom_registries %}
         {% if registry.ca and registry.cert and registry.key  %}
