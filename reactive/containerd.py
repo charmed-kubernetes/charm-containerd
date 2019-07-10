@@ -30,7 +30,6 @@ from charmhelpers.fetch import apt_install, apt_update, import_key
 
 
 DB = unitdata.kv()
-CERTIFICATE_DIRECTORY = '/root/cdk/containerd/certs'
 
 
 def _check_containerd():
@@ -364,9 +363,6 @@ def remove_registry():
         # Remove from DB.
         DB.unset('registry')
         DB.flush()
-
-        # Remove tls-related data.
-        cert_dir = os.path.join(CERTIFICATE_DIRECTORY, docker_registry['url'])
 
         # Remove auth-related data.
         log('Disabling auth for docker registry: {}.'.format(
