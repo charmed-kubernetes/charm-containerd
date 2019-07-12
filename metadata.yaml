@@ -20,3 +20,5 @@ requires:
   containerd:
     interface: container-runtime
     scope: container
+  docker-registry:
+    interface: docker-registry

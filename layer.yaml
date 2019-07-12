@@ -5,6 +5,7 @@ includes:
   - 'layer:apt'
   - 'layer:container-runtime-common'
   - 'interface:container-runtime'
+  - 'interface:docker-registry'
 options:
   basic:
     packages:

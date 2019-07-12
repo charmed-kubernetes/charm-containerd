@@ -12,8 +12,16 @@ from charms.reactive import (
     when, when_not, when_any, set_state, is_state, remove_state
 )
 
+from charms.layer.container_runtime_common import (
+    ca_crt_path,
+    server_crt_path,
+    server_key_path
+)
+
 from charmhelpers.core import host
+from charmhelpers.core import unitdata
 from charmhelpers.core.templating import render
+from charmhelpers.core.host import install_ca_cert
 from charmhelpers.core.hookenv import status_set, config, log
 
 from charmhelpers.core.kernel import modprobe
@@ -21,11 +29,14 @@ from charmhelpers.core.kernel import modprobe
 from charmhelpers.fetch import apt_install, apt_update, import_key
 
 
+DB = unitdata.kv()
+
+
 def _check_containerd():
     """
     Check that containerd is running.
 
-    :returns: Boolean
+    :return: Boolean
     """
     try:
         check_call([
@@ -39,6 +50,43 @@ def _check_containerd():
     return True
 
 
+def merge_custom_registries(custom_registries):
+    """
+    Merge custom registries and Docker
+    registries from relation.
+
+    :return: List Dictionary merged registries
+    """
+    registries = []
+    registries += json.loads(custom_registries)
+
+    docker_registry = DB.get('registry', None)
+    if docker_registry:
+        registries.append(docker_registry)
+
+    return registries
+
+
+@when_not('containerd.br_netfilter.enabled')
+def enable_br_netfilter_module():
+    """
+    Enable br_netfilter to work around
+    https://github.com/kubernetes/kubernetes/issues/21613
+
+    :return: None
+    """
+    try:
+        modprobe('br_netfilter', persist=True)
+    except Exception:
+        log(traceback.format_exc())
+        if host.is_container():
+            log('LXD detected, ignoring failure to load br_netfilter')
+        else:
+            log('LXD not detected, will retry loading br_netfilter')
+            return
+    set_state('containerd.br_netfilter.enabled')
+
+
 @when('apt.installed.containerd')
 @when_not('containerd.ready')
 def install_containerd():
@@ -47,7 +95,7 @@ def install_containerd():
     by `layer-apt`.  We'll just
     configure it.
 
-    :returns: None
+    :return: None
     """
     config_changed()
 
@@ -141,7 +189,7 @@ def purge_containerd():
     Purge Containerd from the
     cluster.
 
-    :returns: None
+    :return: None
     """
     purge('containerd')
 
@@ -152,7 +200,7 @@ def gpu_config_changed():
     Remove the GPU states when the config
     is changed.
 
-    :returns: None
+    :return: None
     """
     remove_state('containerd.nvidia.ready')
     remove_state('containerd.nvidia.available')
@@ -164,7 +212,7 @@ def config_changed():
     Render the config template
     and restart the service.
 
-    :returns: None
+    :return: None
     """
     # Create "dumb" context based on Config
     # to avoid triggering config.changed.
@@ -172,9 +220,8 @@ def config_changed():
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
-    # Mutate the input string into a dictionary.
     context['custom_registries'] = \
-        json.loads(context['custom_registries'])
+        merge_custom_registries(context['custom_registries'])
 
     if is_state('containerd.nvidia.available') \
             and context.get('runtime') == 'auto':
@@ -209,7 +256,7 @@ def proxy_changed():
     """
     Apply new proxy settings.
 
-    :returns: None
+    :return: None
     """
     # Create "dumb" context based on Config
     # to avoid triggering config.changed.
@@ -247,7 +294,7 @@ def publish_config():
     Pass configuration to principal
     charm.
 
-    :returns: None
+    :return: None
     """
     endpoint = endpoint_from_flag('endpoint.containerd.joined')
     endpoint.set_config(
@@ -257,21 +304,69 @@ def publish_config():
     )
 
 
-@when_not('containerd.br_netfilter.enabled')
-def enable_br_netfilter_module():
+@when('endpoint.docker-registry.ready')
+@when_not('containerd.registry.configured')
+def configure_registry():
     """
-    Enable br_netfilter to work
-    around https://github.com/kubernetes/kubernetes/issues/21613
+    Add docker registry config when present.
 
-    :returns: None
+    :return: None
     """
-    try:
-        modprobe('br_netfilter', persist=True)
-    except Exception:
-        log(traceback.format_exc())
-        if host.is_container():
-            log('LXD detected, ignoring failure to load br_netfilter')
-        else:
-            log('LXD not detected, will retry loading br_netfilter')
-            return
-    set_state('containerd.br_netfilter.enabled')
+    registry = endpoint_from_flag('endpoint.docker-registry.ready')
+
+    docker_registry = {
+        'url': registry.registry_netloc
+    }
+
+    # Handle auth data.
+    if registry.has_auth_basic():
+        docker_registry['username'] = registry.basic_user,
+        docker_registry['password'] = registry.basic_password
+
+    # Handle TLS data.
+    if registry.has_tls():
+        # Ensure the CA that signed our registry cert is trusted.
+        install_ca_cert(registry.tls_ca, name='juju-docker-registry')
+
+        docker_registry['ca'] = str(ca_crt_path)
+        docker_registry['key'] = str(server_key_path)
+        docker_registry['cert'] = str(server_crt_path)
+
+    DB.set('registry', docker_registry)
+
+    config_changed()
+    set_state('containerd.registry.configured')
+
+
+@when('endpoint.docker-registry.changed',
+      'containerd.registry.configured')
+def reconfigure_registry():
+    """
+    Signal to update the registry config when something changes.
+
+    :return: None
+    """
+    remove_state('containerd.registry.configured')
+
+
+@when('containerd.registry.configured')
+@when_not('endpoint.docker-registry.joined')
+def remove_registry():
+    """
+    Remove registry config when the registry is no longer present.
+
+    :return: None
+    """
+    docker_registry = DB.get('registry', None)
+
+    if docker_registry:
+        # Remove from DB.
+        DB.unset('registry')
+        DB.flush()
+
+        # Remove auth-related data.
+        log('Disabling auth for docker registry: {}.'.format(
+            docker_registry['url']))
+
+    config_changed()
+    remove_state('containerd.registry.configured')
