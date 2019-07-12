@@ -6,3 +6,11 @@ includes:
   - 'layer:apt'
   - 'layer:container-runtime-common'
   - 'interface:container-runtime'
+<<<<<<< HEAD
+=======
+  - 'interface:docker-registry'
+options:
+  basic:
+    packages:
+      - containerd
+>>>>>>> master
