@@ -22,7 +22,8 @@ from charms.reactive import (
 from charms.layer.container_runtime_common import (
     ca_crt_path,
     server_crt_path,
-    server_key_path
+    server_key_path,
+    check_for_juju_https_proxy
 )
 
 from charmhelpers.core import host
@@ -45,7 +46,6 @@ from charmhelpers.fetch import (
     apt_autoremove,
     import_key
 )
-
 
 DB = unitdata.kv()
 
@@ -268,13 +268,8 @@ def config_changed():
     # to avoid triggering config.changed.
     context = dict(config())
 
-    # If juju environment variables are defined, take precedent
-    # over config.yaml.
-    # See: https://github.com/dshcherb/charm-helpers/blob/eba3742de6a7023f22778ba58fbbb0ac212d2ea6/charmhelpers/core/hookenv.py#L1455
-    environment_config = env_proxy_settings()
-    if environment_config is not None:
-        config().update(environment_config)
-
+    modified_config = check_for_juju_https_proxy(config)
+    context.update(modified_config)
 
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
