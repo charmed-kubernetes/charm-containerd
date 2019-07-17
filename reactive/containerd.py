@@ -88,7 +88,7 @@ def enable_br_netfilter_module():
 
 
 @when('apt.installed.containerd')
-@when_not('containerd.ready')
+@when_not('containerd.ready', 'endpoint.containerd.departed')
 def install_containerd():
     """
     Actual install is handled
@@ -132,7 +132,7 @@ def check_for_gpu():
 
 
 @when('containerd.nvidia.available')
-@when_not('containerd.nvidia.ready')
+@when_not('containerd.nvidia.ready', 'endpoint.containerd.departed')
 def configure_nvidia():
     status_set('maintenance', 'Installing Nvidia drivers.')
 
@@ -207,6 +207,7 @@ def gpu_config_changed():
 
 
 @when('config.changed')
+@when_not('endpoint.containerd.departed')
 def config_changed():
     """
     Render the config template
@@ -248,10 +249,10 @@ def config_changed():
     else:
         status_set('blocked', 'Container runtime not available.')
 
-
+@when('containerd.ready')
 @when_any('config.changed.http_proxy', 'config.changed.https_proxy',
           'config.changed.no_proxy')
-@when('containerd.ready')
+@when_not('endpoint.containerd.departed')
 def proxy_changed():
     """
     Apply new proxy settings.
@@ -289,6 +290,7 @@ def proxy_changed():
 
 @when('containerd.ready')
 @when('endpoint.containerd.joined')
+@when_not('endpoint.containerd.departed')
 def publish_config():
     """
     Pass configuration to principal
