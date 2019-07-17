@@ -311,10 +311,7 @@ def proxy_changed():
     """
     # Create "dumb" context based on Config
     # to avoid triggering config.changed.
-    context = dict(config())
-
-    modified_config = check_for_juju_https_proxy(config)
-    context.update(modified_config)
+    context = check_for_juju_https_proxy(config)
 
     service_file = 'proxy.conf'
     service_directory = '/etc/systemd/system/containerd.service.d'
