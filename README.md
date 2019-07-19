@@ -41,11 +41,7 @@ principal charm.
 See [config.yaml](config.yaml) for
 list of configuration options.
 
-> Note: Setting HTTP proxy values will be overriden if `juju-http-proxy` or `juju-https-proxy` settings are set on the model.
-
-# Testing
-
-When upgrading this charm, the [`container_runtime_version`](https://github.com/VariableDeclared/jenkins/blob/3bf2cabc7185568e6a80a137a7f083c428048683/jobs/validate-juju-https-envs.yaml#L25) of the `validate-https-proxy-envs` key needs to be updated with the new containerd version.
+> Note: Setting HTTP proxy values will be override `juju-http-proxy` or `juju-https-proxy` on the model
 
 # Contact Information
 
