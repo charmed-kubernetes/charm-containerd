@@ -41,7 +41,7 @@ principal charm.
 See [config.yaml](config.yaml) for
 list of configuration options.
 
-> Note: Setting HTTP proxy values will be override `juju-http-proxy` or `juju-https-proxy` on the model
+> Note: Setting HTTP proxy values will override `juju-http-proxy` or `juju-https-proxy` on the model
 
 # Contact Information
 
