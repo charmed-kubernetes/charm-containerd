@@ -28,6 +28,11 @@ from charmhelpers.core.kernel import modprobe
 
 from charmhelpers.fetch import apt_install, apt_update, import_key
 
+try:
+    from charmhelpers.fetch import apt_autoremove
+except ImportError:
+    apt_autoremove = None
+
 
 DB = unitdata.kv()
 
@@ -192,6 +197,28 @@ def purge_containerd():
     :return: None
     """
     purge('containerd')
+
+    if is_state('containerd.nvidia.ready'):
+        purge([
+            'cuda-drivers',
+            'nvidia-container-runtime'
+        ])
+
+
+    sources = [
+        '/etc/apt/sources.list.d/cuda.list',
+        '/etc/apt/sources.list.d/nvidia-container-runtime.list'
+    ]
+
+    for f in sources:
+        if os.path.isfile(f):
+            os.remove(f)
+
+    if apt_autoremove:
+        apt_autoremove()
+
+    remove_state('containerd.nvidia.ready')
+    remove_state('containerd.nvidia.available')
 
 
 @when('config.changed.gpu_driver')
