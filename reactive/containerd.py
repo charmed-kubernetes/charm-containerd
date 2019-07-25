@@ -26,12 +26,12 @@ from charmhelpers.core.hookenv import status_set, config, log
 
 from charmhelpers.core.kernel import modprobe
 
-from charmhelpers.fetch import apt_install, apt_update, import_key
-
-try:
-    from charmhelpers.fetch import apt_autoremove
-except ImportError:
-    apt_autoremove = None
+from charmhelpers.fetch import (
+    apt_install,
+    apt_update,
+    apt_autoremove,
+    import_key
+)
 
 
 DB = unitdata.kv()
@@ -214,11 +214,11 @@ def purge_containerd():
         if os.path.isfile(f):
             os.remove(f)
 
-    if apt_autoremove:
-        apt_autoremove()
+    apt_autoremove()
 
     remove_state('containerd.nvidia.ready')
     remove_state('containerd.nvidia.available')
+    remove_state('endpoint.containerd.departed')
 
 
 @when('config.changed.gpu_driver')
