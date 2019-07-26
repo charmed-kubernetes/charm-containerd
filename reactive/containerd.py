@@ -5,8 +5,6 @@ import traceback
 
 from subprocess import check_call, check_output, CalledProcessError
 
-from charms.apt import purge
-
 from charms.reactive import endpoint_from_flag
 from charms.reactive import (
     when, when_not, when_any, set_state, is_state, remove_state
@@ -29,6 +27,7 @@ from charmhelpers.core.kernel import modprobe
 from charmhelpers.fetch import (
     apt_install,
     apt_update,
+    apt_purge,
     apt_autoremove,
     import_key
 )
@@ -92,16 +91,21 @@ def enable_br_netfilter_module():
     set_state('containerd.br_netfilter.enabled')
 
 
-@when('apt.installed.containerd')
-@when_not('containerd.ready', 'endpoint.containerd.departed')
+@when_not('containerd.ready',
+          'containerd.installed',
+          'endpoint.containerd.departed')
 def install_containerd():
     """
-    Actual install is handled
-    by `layer-apt`.  We'll just
-    configure it.
+    Install containerd and then create
+    initial configuration.
 
     :return: None
     """
+    status_set('maintenance', 'Installing containerd via apt')
+    apt_update()
+    apt_install('containerd', fatal=True)
+
+    set_state('containerd.installed')
     config_changed()
 
 
@@ -196,13 +200,16 @@ def purge_containerd():
 
     :return: None
     """
-    purge('containerd')
+    status_set('maintenance', 'Removing containerd from principal')
+
+    host.service_stop('containerd.service')
+    apt_purge('containerd', fatal=True)
 
     if is_state('containerd.nvidia.ready'):
-        purge([
+        apt_purge([
             'cuda-drivers',
             'nvidia-container-runtime'
-        ])
+        ], fatal=True)
 
 
     sources = [
@@ -214,11 +221,12 @@ def purge_containerd():
         if os.path.isfile(f):
             os.remove(f)
 
-    apt_autoremove()
+    apt_autoremove(purge=True, fatal=True)
 
+    remove_state('containerd.ready')
+    remove_state('containerd.installed')
     remove_state('containerd.nvidia.ready')
     remove_state('containerd.nvidia.available')
-    remove_state('endpoint.containerd.departed')
 
 
 @when('config.changed.gpu_driver')
