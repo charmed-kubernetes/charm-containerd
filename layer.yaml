@@ -2,11 +2,6 @@ repo: https://github.com/juju-solutions/charm-containerd
 includes:
   - 'layer:basic'
   - 'layer:debug'
-  - 'layer:apt'
   - 'layer:container-runtime-common'
   - 'interface:container-runtime'
   - 'interface:docker-registry'
-options:
-  basic:
-    packages:
-      - containerd
