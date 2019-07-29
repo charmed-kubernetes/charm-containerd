@@ -12,10 +12,6 @@ tags:
 series:
   - bionic
 subordinate: true
-provides:
-  sdn-plugin:
-    interface: sdn-plugin
-    scope: container
 requires:
   containerd:
     interface: container-runtime

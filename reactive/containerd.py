@@ -3,13 +3,20 @@ import json
 import requests
 import traceback
 
-from subprocess import check_call, check_output, CalledProcessError
-
-from charms.apt import purge
+from subprocess import (
+    check_call,
+    check_output,
+    CalledProcessError
+)
 
 from charms.reactive import endpoint_from_flag
 from charms.reactive import (
-    when, when_not, when_any, set_state, is_state, remove_state
+    when,
+    when_not,
+    when_any,
+    set_state,
+    is_state,
+    remove_state
 )
 
 from charms.layer.container_runtime_common import (
@@ -22,12 +29,28 @@ from charmhelpers.core import host
 from charmhelpers.core import unitdata
 from charmhelpers.core.templating import render
 from charmhelpers.core.host import install_ca_cert
-from charmhelpers.core.hookenv import status_set, config, log
+from charmhelpers.core.hookenv import (
+    log, 
+    config,
+    status_set
+)
 
 from charmhelpers.core.kernel import modprobe
 from charmhelpers.core.templating import render
-from charmhelpers.fetch import apt_install, apt_update, import_key
-from charmhelpers.core.hookenv import status_set, config, log, resource_get
+from charmhelpers.core.hookenv import (
+    log,
+    config,
+    status_set,
+    resource_get
+)
+
+from charmhelpers.fetch import (
+    apt_install,
+    apt_update,
+    apt_purge,
+    apt_autoremove,
+    import_key
+)
 
 
 DB = unitdata.kv()
@@ -49,6 +72,7 @@ def _check_containerd():
         return False
 
     return True
+
 
 def merge_custom_registries(custom_registries):
     """
@@ -85,6 +109,7 @@ def enable_br_netfilter_module():
             log('LXD not detected, will retry loading br_netfilter')
             return
     set_state('containerd.br_netfilter.enabled')
+
 
 @when_not('kata.installed')
 def install_kata():
@@ -150,7 +175,7 @@ def install_containerd():
     if not archive or os.path.getsize(archive) == 0:
         status_set('maintenance', 'Installing containerd via apt')
         apt_update()
-        apt_install(['containerd'])
+        apt_install('containerd', fatal=True)
 
     else:
         status_set('maintenance', 'Installing containerd via resource')
@@ -202,7 +227,7 @@ def check_for_gpu():
 
 
 @when('containerd.nvidia.available')
-@when_not('containerd.nvidia.ready')
+@when_not('containerd.nvidia.ready', 'endpoint.containerd.departed')
 def configure_nvidia():
     status_set('maintenance', 'Installing Nvidia drivers.')
 
@@ -261,7 +286,33 @@ def purge_containerd():
 
     :return: None
     """
-    purge('containerd')
+    status_set('maintenance', 'Removing containerd from principal')
+
+    host.service_stop('containerd.service')
+    apt_purge('containerd', fatal=True)
+
+    if is_state('containerd.nvidia.ready'):
+        apt_purge([
+            'cuda-drivers',
+            'nvidia-container-runtime'
+        ], fatal=True)
+
+
+    sources = [
+        '/etc/apt/sources.list.d/cuda.list',
+        '/etc/apt/sources.list.d/nvidia-container-runtime.list'
+    ]
+
+    for f in sources:
+        if os.path.isfile(f):
+            os.remove(f)
+
+    apt_autoremove(purge=True, fatal=True)
+
+    remove_state('containerd.ready')
+    remove_state('containerd.installed')
+    remove_state('containerd.nvidia.ready')
+    remove_state('containerd.nvidia.available')
 
 
 @when('config.changed.gpu_driver')
@@ -277,6 +328,7 @@ def gpu_config_changed():
 
 
 @when('config.changed')
+@when_not('endpoint.containerd.departed')
 def config_changed():
     """
     Render the config template
@@ -322,9 +374,10 @@ def config_changed():
             status_set('blocked', 'Container runtime not available.')
 
 
+@when('containerd.ready')
 @when_any('config.changed.http_proxy', 'config.changed.https_proxy',
           'config.changed.no_proxy')
-@when('containerd.ready')
+@when_not('endpoint.containerd.departed')
 def proxy_changed():
     """
     Apply new proxy settings.
@@ -362,6 +415,7 @@ def proxy_changed():
 
 @when('containerd.ready')
 @when('endpoint.containerd.joined')
+@when_not('endpoint.containerd.departed')
 def publish_config():
     """
     Pass configuration to principal
