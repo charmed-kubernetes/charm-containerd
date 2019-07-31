@@ -204,6 +204,7 @@ def configure_nvidia():
     ], fatal=True)
 
     set_state('containerd.nvidia.ready')
+    config_changed()
 
 
 @when('endpoint.containerd.departed')
