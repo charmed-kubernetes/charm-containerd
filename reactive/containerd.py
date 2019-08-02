@@ -55,6 +55,15 @@ from charmhelpers.fetch import (
 )
 
 DB = unitdata.kv()
+KATA_PACKAGES = [
+    'kata-runtime',
+    'kata-proxy',
+    'kata-shim'
+]
+NVIDIA_PACKAGES = [
+    'cuda-drivers',
+    'nvidia-container-runtime'
+]
 
 
 def _check_containerd():
@@ -144,7 +153,7 @@ def install_kata():
             )
 
         apt_update()
-        apt_install(['kata-runtime', 'kata-proxy', 'kata-shim'])
+        apt_install(KATA_PACKAGES)
 
     else:
         status_set('maintenance', 'Installing Kata via resource')
@@ -160,9 +169,9 @@ def install_kata():
 
 
 @when('kata.installed')
-@when('apt.installed.containerd')
-@when_not('containerd.ready')
-@when_not('containerd.installed')
+@when_not('containerd.ready',
+          'containerd.installed',
+          'endpoint.containerd.departed')
 def install_containerd():
     """
     Check to see if there's an archive
@@ -271,10 +280,7 @@ def configure_nvidia():
 
     apt_update()
 
-    apt_install([
-        'cuda-drivers',
-        'nvidia-container-runtime',
-    ], fatal=True)
+    apt_install(NVIDIA_PACKAGES, fatal=True)
 
     set_state('containerd.nvidia.ready')
     config_changed()
@@ -294,15 +300,15 @@ def purge_containerd():
     apt_purge('containerd', fatal=True)
 
     if is_state('containerd.nvidia.ready'):
-        apt_purge([
-            'cuda-drivers',
-            'nvidia-container-runtime'
-        ], fatal=True)
+        apt_purge(NVIDIA_PACKAGES fatal=True)
 
+    if is_state('kata.installed'):
+        apt_purge(KATA_PACKAGES, fatal=True)
 
     sources = [
         '/etc/apt/sources.list.d/cuda.list',
-        '/etc/apt/sources.list.d/nvidia-container-runtime.list'
+        '/etc/apt/sources.list.d/nvidia-container-runtime.list',
+        '/etc/apt/sources.list.d/kata-containers.list'
     ]
 
     for f in sources:
