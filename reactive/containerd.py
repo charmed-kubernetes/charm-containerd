@@ -22,7 +22,8 @@ from charms.reactive import (
 from charms.layer.container_runtime_common import (
     ca_crt_path,
     server_crt_path,
-    server_key_path
+    server_key_path,
+    check_for_juju_https_proxy
 )
 
 from charmhelpers.core import host
@@ -30,9 +31,10 @@ from charmhelpers.core import unitdata
 from charmhelpers.core.templating import render
 from charmhelpers.core.host import install_ca_cert
 from charmhelpers.core.hookenv import (
-    log, 
+    log,
     config,
-    status_set
+    status_set,
+    env_proxy_settings
 )
 
 from charmhelpers.core.kernel import modprobe
@@ -51,7 +53,6 @@ from charmhelpers.fetch import (
     apt_autoremove,
     import_key
 )
-
 
 DB = unitdata.kv()
 
@@ -276,6 +277,7 @@ def configure_nvidia():
     ], fatal=True)
 
     set_state('containerd.nvidia.ready')
+    config_changed()
 
 
 @when('endpoint.containerd.departed')
@@ -339,6 +341,7 @@ def config_changed():
     # Create "dumb" context based on Config
     # to avoid triggering config.changed.
     context = dict(config())
+
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
@@ -386,7 +389,8 @@ def proxy_changed():
     """
     # Create "dumb" context based on Config
     # to avoid triggering config.changed.
-    context = dict(config())
+    context = check_for_juju_https_proxy(config)
+
     service_file = 'proxy.conf'
     service_directory = '/etc/systemd/system/containerd.service.d'
     service_path = os.path.join(service_directory, service_file)

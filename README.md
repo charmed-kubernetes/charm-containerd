@@ -5,9 +5,9 @@ engine within a running Juju charm application. Containerd is an open platform
 for developers and sysadmins to build, ship, and run distributed applications
 in containers.
 
-Containerd focuses on distributing applications as containers that can be quickly 
-assembled from components that are run the same on different servers without 
-environmental dependencies. This eliminates the friction between development, 
+Containerd focuses on distributing applications as containers that can be quickly
+assembled from components that are run the same on different servers without
+environmental dependencies. This eliminates the friction between development,
 QA, and production environments.
 
 # States
@@ -23,7 +23,7 @@ The following states are set by this subordinate:
 
 The Containerd subordinate charm is to be used with principal
 charms that need a container runtime.  To use, we deploy
-the Containerd subordinate charm and then relate it to the 
+the Containerd subordinate charm and then relate it to the
 principal charm.
 
 ```
@@ -41,14 +41,14 @@ principal charm.
 See [config.yaml](config.yaml) for
 list of configuration options.
 
+> Note: Setting HTTP proxy values will override `juju-http-proxy` or `juju-https-proxy` on the model
 
 # Contact Information
 
-This charm is available at <https://jujucharms.com/containerd> and contains the 
-open source operations code to deploy on all public clouds in the Juju 
+This charm is available at <https://jujucharms.com/containerd> and contains the
+open source operations code to deploy on all public clouds in the Juju
 ecosystem.
 
 ## Containerd links
 
   - The [Containerd homepage](https://containerd.io/)
-
