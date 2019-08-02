@@ -16,6 +16,8 @@ requires:
   containerd:
     interface: container-runtime
     scope: container
+  docker-registry:
+    interface: docker-registry
 resources:
   containerd-archive:
     type: file
@@ -25,5 +27,3 @@ resources:
     type: file
     filename: kata-archive.tar.gz
     description: Offline archive of kata debs
-  docker-registry:
-    interface: docker-registry

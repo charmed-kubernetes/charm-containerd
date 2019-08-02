@@ -300,7 +300,7 @@ def purge_containerd():
     apt_purge('containerd', fatal=True)
 
     if is_state('containerd.nvidia.ready'):
-        apt_purge(NVIDIA_PACKAGES fatal=True)
+        apt_purge(NVIDIA_PACKAGES, fatal=True)
 
     if is_state('kata.installed'):
         apt_purge(KATA_PACKAGES, fatal=True)
