@@ -219,7 +219,7 @@ def install_containerd():
         status_set('blocked', 'Container runtime not available.')
 
 
-@when('config.enable-kata.changed')
+@when('config.changed.enable-kata')
 def change_kata():
     """
     Install or remove Kata containers.
@@ -385,6 +385,8 @@ def config_changed():
 
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
+
+    context['enable_kata'] = context['enable-kata']
 
     context['custom_registries'] = \
         merge_custom_registries(context['custom_registries'])
