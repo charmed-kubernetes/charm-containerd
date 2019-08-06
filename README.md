@@ -10,7 +10,7 @@ assembled from components that are run the same on different servers without
 environmental dependencies. This eliminates the friction between development,
 QA, and production environments.
 
-# States
+## States
 
 The following states are set by this subordinate:
 
@@ -36,14 +36,14 @@ juju add-relation containerd [principal charm]
 This charm will automatically scale out with the
 principal charm.
 
-# Configuration
+## Configuration
 
 See [config.yaml](config.yaml) for
 list of configuration options.
 
 > Note: Setting HTTP proxy values will override `juju-http-proxy` or `juju-https-proxy` on the model
 
-# Contact Information
+## Contact Information
 
 This charm is available at <https://jujucharms.com/containerd> and contains the
 open source operations code to deploy on all public clouds in the Juju

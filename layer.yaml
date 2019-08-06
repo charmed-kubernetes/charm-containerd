@@ -1,7 +1,8 @@
-repo: https://github.com/juju-solutions/charm-containerd
+repo: https://github.com/charmed-kubernetes/charm-containerd
 includes:
   - 'layer:basic'
   - 'layer:debug'
   - 'layer:container-runtime-common'
   - 'interface:container-runtime'
+  - 'interface:untrusted-container-runtime'
   - 'interface:docker-registry'

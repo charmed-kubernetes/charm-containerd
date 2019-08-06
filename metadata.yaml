@@ -6,7 +6,7 @@ description: |
   containerd manages the complete container lifecycle of its
   host system, from image transfer and storage to container
   execution and supervision to low-level storage to network
-  attachments and beyond. 
+  attachments and beyond.
 tags:
   - containers
 series:
@@ -18,3 +18,7 @@ requires:
     scope: container
   docker-registry:
     interface: docker-registry
+provides:
+  untrusted:
+    interface: untrusted-container-runtime
+    scope: container

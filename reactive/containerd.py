@@ -9,14 +9,14 @@ from subprocess import (
     CalledProcessError
 )
 
-from charms.reactive import endpoint_from_flag
 from charms.reactive import (
     when,
     when_not,
     when_any,
     set_state,
     is_state,
-    remove_state
+    remove_state,
+    endpoint_from_flag
 )
 
 from charms.layer.container_runtime_common import (
@@ -26,10 +26,12 @@ from charms.layer.container_runtime_common import (
     check_for_juju_https_proxy
 )
 
-from charmhelpers.core import host
-from charmhelpers.core import unitdata
+from charmhelpers.core import (
+    host,
+    unitdata
+)
+
 from charmhelpers.core.templating import render
-from charmhelpers.core.host import install_ca_cert
 from charmhelpers.core.hookenv import (
     status_set,
     config,
@@ -47,7 +49,13 @@ from charmhelpers.fetch import (
     import_key
 )
 
+
 DB = unitdata.kv()
+
+NVIDIA_PACKAGES = [
+    'cuda-drivers',
+    'nvidia-container-runtime',
+]
 
 
 def _check_containerd():
@@ -198,10 +206,7 @@ def configure_nvidia():
 
     apt_update()
 
-    apt_install([
-        'cuda-drivers',
-        'nvidia-container-runtime',
-    ], fatal=True)
+    apt_install(NVIDIA_PACKAGES, fatal=True)
 
     set_state('containerd.nvidia.ready')
     config_changed()
@@ -221,11 +226,7 @@ def purge_containerd():
     apt_purge('containerd', fatal=True)
 
     if is_state('containerd.nvidia.ready'):
-        apt_purge([
-            'cuda-drivers',
-            'nvidia-container-runtime'
-        ], fatal=True)
-
+        apt_purge(NVIDIA_PACKAGES, fatal=True)
 
     sources = [
         '/etc/apt/sources.list.d/cuda.list',
@@ -275,6 +276,17 @@ def config_changed():
     context['custom_registries'] = \
         merge_custom_registries(context['custom_registries'])
 
+    untrusted = DB.get('untrusted')
+    if untrusted:
+        context['untrusted'] = True
+        context['untrusted_name'] = untrusted['name']
+        context['untrusted_path'] = untrusted['binary_path']
+        context['untrusted_binary'] = os.path.basename(
+            untrusted['binary_path'])
+
+    else:
+        context['untrusted'] = False
+
     if is_state('containerd.nvidia.available') \
             and context.get('runtime') == 'auto':
         context['runtime'] = 'nvidia-container-runtime'
@@ -294,11 +306,11 @@ def config_changed():
     host.service_restart('containerd.service')
 
     if _check_containerd():
-        status_set('active', 'Container runtime available.')
+        status_set('active', 'Container runtime available')
         set_state('containerd.ready')
 
     else:
-        status_set('blocked', 'Container runtime not available.')
+        status_set('blocked', 'Container runtime not available')
 
 @when('containerd.ready')
 @when_any('config.changed.http_proxy', 'config.changed.https_proxy',
@@ -358,6 +370,37 @@ def publish_config():
     )
 
 
+@when('endpoint.untrusted.available')
+@when_not('untrusted.configured')
+@when_not('endpoint.containerd.departed')
+def untrusted_available():
+    """
+    Handle untrusted container runtime.
+
+    :return: None
+    """
+    untrusted_runtime = endpoint_from_flag('endpoint.untrusted.available')
+
+    DB.set('untrusted', dict(untrusted_runtime.get_config()))
+    config_changed()
+
+    set_state('untrusted.configured')
+
+
+@when('endpoint.untrusted.departed')
+def untrusted_departed():
+    """
+    Handle untrusted container runtime.
+
+    :return: None
+    """
+    DB.unset('untrusted')
+    DB.flush()
+    config_changed()
+
+    remove_state('untrusted.configured')
+
+
 @when('endpoint.docker-registry.ready')
 @when_not('containerd.registry.configured')
 def configure_registry():
@@ -374,13 +417,13 @@ def configure_registry():
 
     # Handle auth data.
     if registry.has_auth_basic():
-        docker_registry['username'] = registry.basic_user,
+        docker_registry['username'] = registry.basic_user
         docker_registry['password'] = registry.basic_password
 
     # Handle TLS data.
     if registry.has_tls():
         # Ensure the CA that signed our registry cert is trusted.
-        install_ca_cert(registry.tls_ca, name='juju-docker-registry')
+        host.install_ca_cert(registry.tls_ca, name='juju-docker-registry')
 
         docker_registry['ca'] = str(ca_crt_path)
         docker_registry['key'] = str(server_key_path)

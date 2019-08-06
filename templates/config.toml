@@ -35,16 +35,23 @@ oom_score = 0
     enable_tls_streaming = false
     max_container_log_line_size = 16384
     [plugins.cri.containerd]
-      snapshotter = "overlayfs"
       no_pivot = false
       [plugins.cri.containerd.default_runtime]
         runtime_type = "io.containerd.runtime.v1.linux"
-        runtime_engine = ""
-        runtime_root = ""
+	  {% if untrusted %}
       [plugins.cri.containerd.untrusted_workload_runtime]
-        runtime_type = ""
-        runtime_engine = ""
-        runtime_root = ""
+        runtime_root = "io.containerd.{{ untrusted_name }}.v2"
+	  {% endif %}
+      [plugins.cri.containerd.runtimes]
+        [plugins.cri.containerd.runtimes.runc]
+          runtime_type = "io.containerd.runc.v1"
+	    {% if untrusted %}
+        [plugins.cri.containerd.runtimes.{{ untrusted_name }}]
+          runtime_type = "io.containerd.runtime.v1.linux"
+          [plugins.cri.containerd.runtimes.{{ untrusted_name }}.options]
+            Runtime = "{{ untrusted_binary }}"
+            RuntimeRoot = "{{ untrusted_path }}"
+		{% endif %}
     [plugins.cri.cni]
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"
