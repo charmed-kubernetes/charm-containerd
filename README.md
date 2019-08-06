@@ -1,7 +1,7 @@
 # Charm for Containerd
 
 This subordinate charm deploys the [Containerd](https://containerd.io/)
-engine within a running Juju charm application. Containerd is an open platform
+engine within a running Juju charm model. Containerd is an open platform
 for developers and sysadmins to build, ship, and run distributed applications
 in containers.
 
