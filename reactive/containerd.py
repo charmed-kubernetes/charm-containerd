@@ -121,7 +121,6 @@ def enable_br_netfilter_module():
     set_state('containerd.br_netfilter.enabled')
 
 
-@when_not('kata.installed')
 def install_kata():
     """
     Install the Kata container runtime.
@@ -168,7 +167,22 @@ def install_kata():
     set_state('kata.installed')
 
 
-@when('kata.installed')
+def purge_kata():
+    """
+    Purge Kata containers.
+
+    :return: None
+    """
+    if is_state('kata.installed'):
+        apt_purge(KATA_PACKAGES, fatal=True)
+
+    source = '/etc/apt/sources.list.d/kata-containers.list'
+    if os.path.isfile(source):
+        os.remove(source)
+
+    remove_state('kata.installed')
+
+
 @when_not('containerd.ready',
           'containerd.installed',
           'endpoint.containerd.departed')
@@ -205,6 +219,24 @@ def install_containerd():
         status_set('blocked', 'Container runtime not available.')
 
 
+@when('config.enable-kata.changed')
+def change_kata():
+    """
+    Install or remove Kata containers.
+
+    :return: None
+    """
+    context = dict(config())
+    enabled = context['enable-kata']
+
+    if enabled == 'true':
+        install_kata()
+    elif enabled == 'false':
+        purge_kata()
+    else:
+        status_set('blocked', 'enable-kata is invalid ({})'.format(enabled))
+
+
 @when_not('containerd.nvidia.ready')
 @when_not('containerd.nvidia.available')
 def check_for_gpu():
@@ -239,6 +271,11 @@ def check_for_gpu():
 @when('containerd.nvidia.available')
 @when_not('containerd.nvidia.ready', 'endpoint.containerd.departed')
 def configure_nvidia():
+    """
+    Install and configure Nvidia drivers.
+
+    :return: None
+    """
     status_set('maintenance', 'Installing Nvidia drivers.')
 
     dist = host.lsb_release()
@@ -302,18 +339,16 @@ def purge_containerd():
     if is_state('containerd.nvidia.ready'):
         apt_purge(NVIDIA_PACKAGES, fatal=True)
 
-    if is_state('kata.installed'):
-        apt_purge(KATA_PACKAGES, fatal=True)
-
     sources = [
         '/etc/apt/sources.list.d/cuda.list',
         '/etc/apt/sources.list.d/nvidia-container-runtime.list',
-        '/etc/apt/sources.list.d/kata-containers.list'
     ]
 
     for f in sources:
         if os.path.isfile(f):
             os.remove(f)
+
+    purge_kata()
 
     apt_autoremove(purge=True, fatal=True)
 
@@ -457,7 +492,7 @@ def configure_registry():
 
     # Handle auth data.
     if registry.has_auth_basic():
-        docker_registry['username'] = registry.basic_user,
+        docker_registry['username'] = registry.basic_user
         docker_registry['password'] = registry.basic_password
 
     # Handle TLS data.

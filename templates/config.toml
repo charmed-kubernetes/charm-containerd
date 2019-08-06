@@ -38,8 +38,10 @@ oom_score = 0
       no_pivot = false
       [plugins.cri.containerd.default_runtime]
         runtime_type = "io.containerd.runtime.v1.linux"
+	  {% if enable-kata == 'true' %}
       [plugins.cri.containerd.untrusted_workload_runtime]
         runtime_type = "io.containerd.kata.v2"
+	  {% endif %}
       [plugins.cri.containerd.runtimes]
         [plugins.cri.containerd.runtimes.runc]
           runtime_type = "io.containerd.runc.v1"
@@ -53,11 +55,13 @@ oom_score = 0
             Root = ""
             CriuPath = ""
             SystemdCgroup = false
+	    {% if enable-kata == 'true' %}
         [plugins.cri.containerd.runtimes.kata]
           runtime_type = "io.containerd.runtime.v1.linux"
           [plugins.cri.containerd.runtimes.kata.options]
             Runtime = "kata-runtime"
             RuntimeRoot = "/usr/bin/kata-runtime"
+		{% endif %}
     [plugins.cri.registry]
       [plugins.cri.registry.mirrors]
         [plugins.cri.registry.mirrors."docker.io"]

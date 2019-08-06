@@ -23,6 +23,12 @@ options:
     default: "containerd-shim"
     description: |
       Set a custom containerd shim.
+  enable-kata:
+    type: string
+    default: "true"
+    description: |
+      Install and enable kata-containers for untrusted workloads.  Set "true"
+      to install or "false" to not.
   http_proxy:
      type: string
      default: ""
