@@ -40,14 +40,14 @@ oom_score = 0
         runtime_type = "io.containerd.runtime.v1.linux"
 	  {% if untrusted %}
       [plugins.cri.containerd.untrusted_workload_runtime]
-        runtime_root = "io.containerd.{{ untrusted_name }}.v2"
+        runtime_type= "io.containerd.{{ untrusted_name }}.v2"
 	  {% endif %}
       [plugins.cri.containerd.runtimes]
         [plugins.cri.containerd.runtimes.runc]
           runtime_type = "io.containerd.runc.v1"
 	    {% if untrusted %}
         [plugins.cri.containerd.runtimes.{{ untrusted_name }}]
-          runtime_type = "io.containerd.runtime.v1.linux"
+          runtime_type= "io.containerd.{{ untrusted_name }}.v2"
           [plugins.cri.containerd.runtimes.{{ untrusted_name }}.options]
             Runtime = "{{ untrusted_binary }}"
             RuntimeRoot = "{{ untrusted_path }}"
