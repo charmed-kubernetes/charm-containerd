@@ -380,8 +380,12 @@ def untrusted_available():
     :return: None
     """
     untrusted_runtime = endpoint_from_flag('endpoint.untrusted.available')
+    received = dict(untrusted_runtime.get_config())
 
-    DB.set('untrusted', dict(untrusted_runtime.get_config()))
+    if 'name' not in received.keys():
+        return  # Try until config is available.
+
+    DB.set('untrusted', received)
     config_changed()
 
     set_state('untrusted.configured')
