@@ -161,6 +161,8 @@ def check_for_gpu():
                 or (driver_config == 'nvidia'):
             set_state('containerd.nvidia.available')
 
+    config_changed()
+
 
 @when('containerd.nvidia.available')
 @when_not('containerd.nvidia.ready', 'endpoint.containerd.departed')
@@ -290,7 +292,8 @@ def config_changed():
     if is_state('containerd.nvidia.available') \
             and context.get('runtime') == 'auto':
         context['runtime'] = 'nvidia-container-runtime'
-    else:
+    if not is_state('containerd.nvidia.available') \
+            and context.get('runtime') == 'auto':
         context['runtime'] = 'runc'
 
     if not os.path.isdir(config_directory):
@@ -311,6 +314,7 @@ def config_changed():
 
     else:
         status_set('blocked', 'Container runtime not available')
+
 
 @when('containerd.ready')
 @when_any('config.changed.http_proxy', 'config.changed.https_proxy',
