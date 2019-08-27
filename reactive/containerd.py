@@ -131,8 +131,8 @@ def install_containerd():
     config_changed()
 
 
-@when_not('containerd.nvidia.ready')
-@when_not('containerd.nvidia.available')
+@when_not('containerd.nvidia.checked')
+@when_not('endpoint.containerd.departed')
 def check_for_gpu():
     """
     Check if an Nvidia GPU
@@ -161,6 +161,7 @@ def check_for_gpu():
                 or (driver_config == 'nvidia'):
             set_state('containerd.nvidia.available')
 
+    set_state('containerd.nvidia.checked')
     config_changed()
 
 
@@ -244,6 +245,7 @@ def purge_containerd():
     remove_state('containerd.ready')
     remove_state('containerd.installed')
     remove_state('containerd.nvidia.ready')
+    remove_state('containerd.nvidia.checked')
     remove_state('containerd.nvidia.available')
 
 
