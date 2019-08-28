@@ -160,9 +160,11 @@ def check_for_gpu():
         if (out.count('nvidia') > 0 and driver_config == 'auto') \
                 or (driver_config == 'nvidia'):
             set_state('containerd.nvidia.available')
+        else:
+            remove_state('containerd.nvidia.available')
+            remove_state('containerd.nvidia.ready')
 
     set_state('containerd.nvidia.checked')
-    config_changed()
 
 
 @when('containerd.nvidia.available')
@@ -252,13 +254,12 @@ def purge_containerd():
 @when('config.changed.gpu_driver')
 def gpu_config_changed():
     """
-    Remove the GPU states when the config
-    is changed.
+    Remove the GPU checked state when
+    the config is changed.
 
     :return: None
     """
-    remove_state('containerd.nvidia.ready')
-    remove_state('containerd.nvidia.available')
+    remove_state('containerd.nvidia.checked')
 
 
 @when('config.changed')
@@ -372,7 +373,7 @@ def publish_config():
     endpoint.set_config(
         socket='unix:///var/run/containerd/containerd.sock',
         runtime='remote',  # TODO handle in k8s worker.
-        nvidia_enabled=is_state('containerd.nvidia.ready')
+        nvidia_enabled=is_state('containerd.nvidia.available')
     )
 
 
