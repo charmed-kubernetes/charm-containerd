@@ -6,3 +6,10 @@ includes:
   - 'interface:container-runtime'
   - 'interface:untrusted-container-runtime'
   - 'interface:docker-registry'
+exclude:
+  - .coverage
+  - .tox
+  - __pycache__
+  - tests
+  - conftest.py
+  - tox.ini
