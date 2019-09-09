@@ -19,6 +19,7 @@ from charms.reactive import (
     endpoint_from_flag
 )
 
+from charms.layer import containerd
 from charms.layer.container_runtime_common import (
     ca_crt_path,
     server_crt_path,
@@ -35,8 +36,7 @@ from charmhelpers.core.templating import render
 from charmhelpers.core.hookenv import (
     status_set,
     config,
-    log,
-    goal_state
+    log
 )
 
 from charmhelpers.core.kernel import modprobe
@@ -278,28 +278,7 @@ def config_changed():
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
-    # Set an appropriate sandbox image based on known registries.
-    # Precedence should be:
-    # - related docker-registry
-    # - default charmed k8s registry (if related to kubernetes)
-    # - upstream
-    # TODO: support k8s image-registry config (LP 1842958)
-    docker_registry = DB.get('registry', None)
-    if docker_registry:
-        sandbox_registry = docker_registry['url']
-    else:
-        try:
-            deployment = goal_state()
-        except NotImplementedError:
-            deployment = {}
-        relations = deployment.get('relations', {}).get('containerd', {})
-
-        if any(k in relations for k in ('kubernetes-master', 'kubernetes-worker')):
-            sandbox_registry = 'rocks.canonical.com:443/cdk'
-        else:
-            sandbox_registry = 'k8s.gcr.io'
-    context['sandbox_image'] = '{}/pause-{}:3.1'.format(sandbox_registry, host.arch())
-
+    context['sandbox_image'] = containerd.get_sandbox_image()
     context['custom_registries'] = \
         merge_custom_registries(context['custom_registries'])
 
