@@ -23,8 +23,11 @@ def get_sandbox_image():
         try:
             deployment = hookenv.goal_state()
         except NotImplementedError:
-            deployment = {}
-        relations = deployment.get('relations', {}).get('containerd', {})
+            relations = []
+            for rid in hookenv.relation_ids('containerd'):
+                relations.append(hookenv.remote_service_name(rid))
+        else:
+            relations = deployment.get('relations', {}).get('containerd', {})
 
         if any(k in relations for k in ('kubernetes-master', 'kubernetes-worker')):
             sandbox_registry = canonical_registry
