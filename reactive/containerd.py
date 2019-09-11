@@ -58,7 +58,7 @@ NVIDIA_PACKAGES = [
     'nvidia-container-runtime',
 ]
 
-
+why doesn't this fail
 def _check_containerd():
     """
     Check that containerd is running.
