@@ -4,6 +4,7 @@ import requests
 import traceback
 
 from subprocess import (
+    ham,
     check_call,
     check_output,
     CalledProcessError
