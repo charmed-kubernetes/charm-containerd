@@ -11,5 +11,4 @@ exclude:
   - .tox
   - __pycache__
   - tests
-  - conftest.py
   - tox.ini
