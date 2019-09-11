@@ -19,6 +19,7 @@ from charms.reactive import (
     endpoint_from_flag
 )
 
+from charms.layer import containerd
 from charms.layer.container_runtime_common import (
     ca_crt_path,
     server_crt_path,
@@ -35,8 +36,7 @@ from charmhelpers.core.templating import render
 from charmhelpers.core.hookenv import (
     status_set,
     config,
-    log,
-    env_proxy_settings
+    log
 )
 
 from charmhelpers.core.kernel import modprobe
@@ -278,6 +278,7 @@ def config_changed():
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
+    context['sandbox_image'] = containerd.get_sandbox_image()
     context['custom_registries'] = \
         merge_custom_registries(context['custom_registries'])
 
