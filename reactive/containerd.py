@@ -278,7 +278,17 @@ def config_changed():
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
-    context['sandbox_image'] = containerd.get_sandbox_image()
+    endpoint = endpoint_from_flag('endpoint.containerd.joined')
+    if endpoint:
+        pause_image_override = \
+            endpoint.get_config().get('pause_image_override')
+        if pause_image_override:
+            context['sandbox_image'] = pause_image_override
+        else:
+            context['sandbox_image'] = containerd.get_sandbox_image()
+    else:
+        context['sandbox_image'] = containerd.get_sandbox_image()
+
     context['custom_registries'] = \
         merge_custom_registries(context['custom_registries'])
 
@@ -456,6 +466,20 @@ def reconfigure_registry():
     :return: None
     """
     remove_state('containerd.registry.configured')
+
+
+@when('endpoint.containerd.changed')
+@when_not('endpoint.containerd.departed')
+def container_runtime_relation_changed():
+    """
+    Run config_changed to use any new
+    config from the endpoint.
+
+    :return: None
+    """
+    config_changed()
+    endpoint = endpoint_from_flag('endpoint.containerd.joined')
+    endpoint.clear_changed()
 
 
 @when('containerd.registry.configured')
