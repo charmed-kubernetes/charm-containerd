@@ -11,7 +11,6 @@ def get_sandbox_image():
 
     :return: str container image location
     '''
-    # TODO: support k8s image-registry config (LP 1842958)
     db = unitdata.kv()
     canonical_registry = 'rocks.canonical.com:443/cdk'
     upstream_registry = 'k8s.gcr.io'
