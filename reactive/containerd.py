@@ -266,19 +266,27 @@ def gpu_config_changed():
 @when_not('endpoint.containerd.departed')
 def config_changed():
     """
-    Render the config template
-    and restart the service.
+    Render the config template and restart the service.
 
     :return: None
     """
-    # Create "dumb" context based on Config
-    # to avoid triggering config.changed.
+    # Create "dumb" context based on Config to avoid triggering config.changed
     context = dict(config())
 
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
 
-    context['sandbox_image'] = containerd.get_sandbox_image()
+    endpoint = endpoint_from_flag('endpoint.containerd.available')
+    if endpoint:
+        sandbox_image = endpoint.get_sandbox_image()
+        if sandbox_image:
+            log('Setting sandbox_image to: {}'.format(sandbox_image))
+            context['sandbox_image'] = sandbox_image
+        else:
+            context['sandbox_image'] = containerd.get_sandbox_image()
+    else:
+        context['sandbox_image'] = containerd.get_sandbox_image()
+
     context['custom_registries'] = \
         merge_custom_registries(context['custom_registries'])
 
@@ -456,6 +464,19 @@ def reconfigure_registry():
     :return: None
     """
     remove_state('containerd.registry.configured')
+
+
+@when('endpoint.containerd.reconfigure')
+@when_not('endpoint.containerd.departed')
+def container_runtime_relation_changed():
+    """
+    Run config_changed to use any new config from the endpoint.
+
+    :return: None
+    """
+    config_changed()
+    endpoint = endpoint_from_flag('endpoint.containerd.reconfigure')
+    endpoint.handle_remote_config()
 
 
 @when('containerd.registry.configured')
