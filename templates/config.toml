@@ -60,10 +60,6 @@ oom_score = 0
       [plugins.cri.registry.mirrors]
         [plugins.cri.registry.mirrors."docker.io"]
           endpoint = ["https://registry-1.docker.io"]
-      {% for registry in custom_registries %}
-        [plugins.cri.registry.mirrors."{{ registry.url }}"]
-          endpoint = ["{{ registry.url }}"]
-      {% endfor %}
     {% if custom_registries %}
       [plugins.cri.registry.auths]
       {% for registry in custom_registries %}
