@@ -177,9 +177,12 @@ def configure_nvidia():
         dist['DISTRIB_ID'].lower(),
         dist['DISTRIB_RELEASE']
     )
-
+    proxies = {
+       "http": config('http_proxy'),
+       "https": config('https_proxy'),
+    }
     ncr_gpg_key = requests.get(
-        'https://nvidia.github.io/nvidia-container-runtime/gpgkey').text
+        'https://nvidia.github.io/nvidia-container-runtime/gpgkey', proxies=proxies).text
     import_key(ncr_gpg_key)
     with open(
         '/etc/apt/sources.list.d/nvidia-container-runtime.list', 'w'
@@ -198,7 +201,7 @@ def configure_nvidia():
     cuda_gpg_key = requests.get(
         'https://developer.download.nvidia.com/'
         'compute/cuda/repos/{}/x86_64/7fa2af80.pub'
-        .format(release.replace('.', ''))
+        .format(release.replace('.', '')), proxies=proxies
     ).text
     import_key(cuda_gpg_key)
     with open('/etc/apt/sources.list.d/cuda.list', 'w') as f:
