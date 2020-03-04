@@ -10,6 +10,7 @@ from subprocess import (
 )
 
 from charms.reactive import (
+    hook,
     when,
     when_not,
     when_any,
@@ -115,6 +116,18 @@ def merge_custom_registries(custom_registries):
         registries.append(docker_registry)
 
     return registries
+
+
+@hook('upgrade-charm')
+def upgrade_charm():
+    """
+    Triggered when upgrade-charm is called.
+
+    Prevent containerd being implicitly updated.
+
+    :return: None
+    """
+    apt_hold(CONTAINERD_PACKAGE)
 
 
 @when_not('containerd.br_netfilter.enabled')
