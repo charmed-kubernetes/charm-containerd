@@ -163,6 +163,8 @@ def publish_version_to_juju():
     :return: None
     """
     version_string = _check_containerd()
+    if not version_string:
+        return
     version = version_string.split()[6].split(b'-')[0].decode()
 
     application_version_set(version)
