@@ -37,7 +37,8 @@ from charmhelpers.core.hookenv import (
     atexit,
     status_set,
     config,
-    log
+    log,
+    application_version_set
 )
 
 from charmhelpers.core.kernel import modprobe
@@ -46,12 +47,15 @@ from charmhelpers.fetch import (
     apt_install,
     apt_update,
     apt_purge,
+    apt_hold,
     apt_autoremove,
     import_key
 )
 
 
 DB = unitdata.kv()
+
+CONTAINERD_PACKAGE = 'containerd'
 
 NVIDIA_PACKAGES = [
     'cuda-drivers',
@@ -63,18 +67,17 @@ def _check_containerd():
     """
     Check that containerd is running.
 
+    `ctr version` calls both client and server side, so is a reasonable indication that everything's been set up
+    correctly.
+
     :return: Boolean
     """
     try:
-        check_call([
-            'ctr',
-            'c',
-            'ls'
-        ])
+        version = check_output(['ctr', 'version'])
     except (FileNotFoundError, CalledProcessError):
-        return False
+        return None
 
-    return True
+    return version
 
 
 @atexit
@@ -144,10 +147,26 @@ def install_containerd():
     """
     status_set('maintenance', 'Installing containerd via apt')
     apt_update()
-    apt_install('containerd', fatal=True)
+    apt_install(CONTAINERD_PACKAGE, fatal=True)
+    apt_hold(CONTAINERD_PACKAGE)
 
     set_state('containerd.installed')
     config_changed()
+
+
+@when('containerd.installed')
+@when_not('containerd.version-published')
+def publish_version_to_juju():
+    """
+    Publish the containerd version to Juju.
+
+    :return: None
+    """
+    version_string = _check_containerd()
+    version = version_string.split()[6].split(b'-')[0].decode()
+
+    application_version_set(version)
+    set_state('containerd.version-published')
 
 
 @when_not('containerd.nvidia.checked')
@@ -251,7 +270,7 @@ def purge_containerd():
     status_set('maintenance', 'Removing containerd from principal')
 
     host.service_stop('containerd.service')
-    apt_purge('containerd', fatal=True)
+    apt_purge(CONTAINERD_PACKAGE, fatal=True)
 
     if is_state('containerd.nvidia.ready'):
         apt_purge(NVIDIA_PACKAGES, fatal=True)
@@ -272,6 +291,7 @@ def purge_containerd():
     remove_state('containerd.nvidia.ready')
     remove_state('containerd.nvidia.checked')
     remove_state('containerd.nvidia.available')
+    remove_state('containerd.version-published')
 
 
 @when('config.changed.gpu_driver')
