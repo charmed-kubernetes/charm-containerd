@@ -5,6 +5,7 @@ from charms.layer import containerd
 
 
 def patch_fixture(patch_target):
+    """Patch through custom mocks."""
     @pytest.fixture()
     def _fixture():
         with mock.patch(patch_target) as m:
@@ -18,7 +19,7 @@ kv = patch_fixture('charmhelpers.core.unitdata.kv')
 
 
 def test_get_sandbox_image(arch, goal, kv):
-    '''Verify we return a sandbox image from the appropriate registry.'''
+    """Verify we return a sandbox image from the appropriate registry."""
     arch.return_value = 'foo'
     image_name = 'pause-{}:3.1'.format(arch.return_value)
 

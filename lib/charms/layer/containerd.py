@@ -2,7 +2,8 @@ from charmhelpers.core import hookenv, host, unitdata
 
 
 def get_sandbox_image():
-    '''Return the container image location for the sandbox_image.
+    """
+    Return the container image location for the sandbox_image.
 
     Set an appropriate sandbox image based on known registries. Precedence should be:
     - related docker-registry
@@ -10,7 +11,7 @@ def get_sandbox_image():
     - upstream
 
     :return: str container image location
-    '''
+    """
     db = unitdata.kv()
     canonical_registry = 'rocks.canonical.com:443/cdk'
     upstream_registry = 'k8s.gcr.io'
