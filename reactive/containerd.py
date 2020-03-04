@@ -94,7 +94,6 @@ def charm_status():
     elif _check_containerd():
         status_set('active', 'Container runtime available')
         set_state('containerd.ready')
-
     else:
         status_set('blocked', 'Container runtime not available')
 
