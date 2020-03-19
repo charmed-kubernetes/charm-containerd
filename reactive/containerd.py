@@ -50,6 +50,7 @@ from charmhelpers.fetch import (
     apt_purge,
     apt_hold,
     apt_autoremove,
+    apt_unhold,
     import_key
 )
 
@@ -285,6 +286,7 @@ def purge_containerd():
     status_set('maintenance', 'Removing containerd from principal')
 
     host.service_stop('containerd.service')
+    apt_unhold(CONTAINERD_PACKAGE)
     apt_purge(CONTAINERD_PACKAGE, fatal=True)
 
     if is_state('containerd.nvidia.ready'):
