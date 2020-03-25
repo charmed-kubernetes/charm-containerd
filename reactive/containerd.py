@@ -10,6 +10,7 @@ from subprocess import (
 )
 
 from charms.reactive import (
+    hook,
     when,
     when_not,
     when_any,
@@ -34,9 +35,11 @@ from charmhelpers.core import (
 
 from charmhelpers.core.templating import render
 from charmhelpers.core.hookenv import (
+    atexit,
     status_set,
     config,
-    log
+    log,
+    application_version_set
 )
 
 from charmhelpers.core.kernel import modprobe
@@ -45,12 +48,16 @@ from charmhelpers.fetch import (
     apt_install,
     apt_update,
     apt_purge,
+    apt_hold,
     apt_autoremove,
+    apt_unhold,
     import_key
 )
 
 
 DB = unitdata.kv()
+
+CONTAINERD_PACKAGE = 'containerd'
 
 NVIDIA_PACKAGES = [
     'cuda-drivers',
@@ -62,24 +69,43 @@ def _check_containerd():
     """
     Check that containerd is running.
 
+    `ctr version` calls both client and server side, so is a reasonable indication that everything's been set up
+    correctly.
+
     :return: Boolean
     """
     try:
-        check_call([
-            'ctr',
-            'c',
-            'ls'
-        ])
+        version = check_output(['ctr', 'version'])
     except (FileNotFoundError, CalledProcessError):
-        return False
+        return None
 
-    return True
+    return version
+
+
+@atexit
+def charm_status():
+    """
+    Set the charm's status after each hook is run.
+
+    :return: None
+    """
+    if is_state('containerd.nvidia.invalid-option'):
+        status_set(
+            'blocked',
+            '{} is an invalid option for gpu_driver'.format(
+                config().get('gpu_driver')
+            )
+        )
+    elif _check_containerd():
+        status_set('active', 'Container runtime available')
+        set_state('containerd.ready')
+    else:
+        status_set('blocked', 'Container runtime not available')
 
 
 def merge_custom_registries(custom_registries):
     """
-    Merge custom registries and Docker
-    registries from relation.
+    Merge custom registries and Docker registries from relation.
 
     :return: List Dictionary merged registries
     """
@@ -93,11 +119,22 @@ def merge_custom_registries(custom_registries):
     return registries
 
 
+@hook('upgrade-charm')
+def upgrade_charm():
+    """
+    Triggered when upgrade-charm is called.
+
+    Prevent containerd being implicitly updated.
+
+    :return: None
+    """
+    apt_hold(CONTAINERD_PACKAGE)
+
+
 @when_not('containerd.br_netfilter.enabled')
 def enable_br_netfilter_module():
     """
-    Enable br_netfilter to work around
-    https://github.com/kubernetes/kubernetes/issues/21613
+    Enable br_netfilter to work around https://github.com/kubernetes/kubernetes/issues/21613.
 
     :return: None
     """
@@ -118,25 +155,43 @@ def enable_br_netfilter_module():
           'endpoint.containerd.departed')
 def install_containerd():
     """
-    Install containerd and then create
-    initial configuration.
+    Install containerd and then create initial configuration.
 
     :return: None
     """
     status_set('maintenance', 'Installing containerd via apt')
     apt_update()
-    apt_install('containerd', fatal=True)
+    apt_install(CONTAINERD_PACKAGE, fatal=True)
+    apt_hold(CONTAINERD_PACKAGE)
 
     set_state('containerd.installed')
     config_changed()
+
+
+@when('containerd.installed')
+@when_not('containerd.version-published')
+def publish_version_to_juju():
+    """
+    Publish the containerd version to Juju.
+
+    :return: None
+    """
+    version_string = _check_containerd()
+    if not version_string:
+        return
+    version = version_string.split()[6].split(b'-')[0].decode()
+
+    application_version_set(version)
+    set_state('containerd.version-published')
 
 
 @when_not('containerd.nvidia.checked')
 @when_not('endpoint.containerd.departed')
 def check_for_gpu():
     """
-    Check if an Nvidia GPU
-    exists.
+    Check if an Nvidia GPU exists.
+
+    :return: None
     """
     valid_options = [
         'auto',
@@ -146,12 +201,7 @@ def check_for_gpu():
 
     driver_config = config().get('gpu_driver')
     if driver_config not in valid_options:
-        status_set(
-            'blocked',
-            '{} is an invalid option for gpu_driver'.format(
-                driver_config
-            )
-        )
+        set_state('containerd.nvidia.invalid-option')
         return
 
     out = check_output(['lspci', '-nnk']).rstrip().decode('utf-8').lower()
@@ -164,12 +214,18 @@ def check_for_gpu():
             remove_state('containerd.nvidia.available')
             remove_state('containerd.nvidia.ready')
 
+    remove_state('containerd.nvidia.invalid-option')
     set_state('containerd.nvidia.checked')
 
 
 @when('containerd.nvidia.available')
 @when_not('containerd.nvidia.ready', 'endpoint.containerd.departed')
 def configure_nvidia():
+    """
+    Based on charm config, install and configure Nivida drivers.
+
+    :return: None
+    """
     status_set('maintenance', 'Installing Nvidia drivers.')
 
     dist = host.lsb_release()
@@ -178,8 +234,8 @@ def configure_nvidia():
         dist['DISTRIB_RELEASE']
     )
     proxies = {
-       "http": config('http_proxy'),
-       "https": config('https_proxy'),
+        "http": config('http_proxy'),
+        "https": config('https_proxy')
     }
     ncr_gpg_key = requests.get(
         'https://nvidia.github.io/nvidia-container-runtime/gpgkey', proxies=proxies).text
@@ -223,15 +279,15 @@ def configure_nvidia():
 @when('endpoint.containerd.departed')
 def purge_containerd():
     """
-    Purge Containerd from the
-    cluster.
+    Purge Containerd from the cluster.
 
     :return: None
     """
     status_set('maintenance', 'Removing containerd from principal')
 
     host.service_stop('containerd.service')
-    apt_purge('containerd', fatal=True)
+    apt_unhold(CONTAINERD_PACKAGE)
+    apt_purge(CONTAINERD_PACKAGE, fatal=True)
 
     if is_state('containerd.nvidia.ready'):
         apt_purge(NVIDIA_PACKAGES, fatal=True)
@@ -252,13 +308,13 @@ def purge_containerd():
     remove_state('containerd.nvidia.ready')
     remove_state('containerd.nvidia.checked')
     remove_state('containerd.nvidia.available')
+    remove_state('containerd.version-published')
 
 
 @when('config.changed.gpu_driver')
 def gpu_config_changed():
     """
-    Remove the GPU checked state when
-    the config is changed.
+    Remove the GPU checked state when the config is changed.
 
     :return: None
     """
@@ -323,13 +379,6 @@ def config_changed():
     log('Restarting containerd.service')
     host.service_restart('containerd.service')
 
-    if _check_containerd():
-        status_set('active', 'Container runtime available')
-        set_state('containerd.ready')
-
-    else:
-        status_set('blocked', 'Container runtime not available')
-
 
 @when('containerd.ready')
 @when_any('config.changed.http_proxy', 'config.changed.https_proxy',
@@ -376,8 +425,7 @@ def proxy_changed():
 @when_not('endpoint.containerd.departed')
 def publish_config():
     """
-    Pass configuration to principal
-    charm.
+    Pass configuration to principal charm.
 
     :return: None
     """

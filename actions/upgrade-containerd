@@ -12,23 +12,28 @@ from charmhelpers.fetch import (
     apt_unhold
 )
 
-from charmhelpers.core import host
+from charmhelpers.core.host import service_restart
+
+from charms.reactive import remove_state
+
+from reactive.containerd import CONTAINERD_PACKAGE
 
 
 def main():
     """
+    Upgrade containerd to the latest in apt.
+
     :return: None
     """
-    containerd = 'containerd'
-
     try:
         apt_update(fatal=True)
-        apt_unhold(containerd)
-        apt_install(containerd, fatal=True)
-        apt_hold(containerd)
-        host.service_reload(containerd)
+        apt_unhold(CONTAINERD_PACKAGE)
+        apt_install(CONTAINERD_PACKAGE, fatal=True)
+        apt_hold(CONTAINERD_PACKAGE)
+        service_restart(CONTAINERD_PACKAGE)
 
-        action_set({'runtime': containerd})
+        remove_state('containerd.version-published')
+        action_set({'runtime': CONTAINERD_PACKAGE})
 
     except Exception as e:
         action_fail(e)
