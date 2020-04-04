@@ -69,10 +69,10 @@ oom_score = 0
           password = "{{ registry.password }}"
         {% endif %}
       {% endfor %}
-      [plugins.cri.registry.tls_configs]
+      [plugins.cri.registry.configs]
       {% for registry in custom_registries %}
         {% if registry.ca and registry.cert and registry.key  %}
-        [plugins.cri.registry.tls_configs."{{ registry.url }}"]
+        [plugins.cri.registry.configs."{{ registry.url }}".tls]
           ca_file   = "{{ registry.ca }}"
           cert_file = "{{ registry.cert }}"
           key_file  = "{{ registry.key }}"
