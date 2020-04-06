@@ -185,11 +185,13 @@ def upgrade_charm():
     """
     Triggered when upgrade-charm is called.
 
-    Prevent containerd being implicitly updated.
-
     :return: None
     """
+    # Prevent containerd apt pkg from being implicitly updated.
     apt_hold(CONTAINERD_PACKAGE)
+
+    # Re-render config in case the template has changed in the new charm.
+    config_changed()
 
 
 @when_not('containerd.br_netfilter.enabled')
