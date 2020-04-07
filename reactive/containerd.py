@@ -107,6 +107,8 @@ def merge_custom_registries(custom_registries):
     """
     Merge custom registries and Docker registries from relation.
 
+    If the object does not contain an endpoint name, fill it in.
+
     :return: List Dictionary merged registries
     """
     registries = []
@@ -115,6 +117,10 @@ def merge_custom_registries(custom_registries):
     docker_registry = DB.get('registry', None)
     if docker_registry:
         registries.append(docker_registry)
+
+    for registry in registries:
+        if not registry.get('name'):
+            registry['name'] = registry['url'].split('//')[1]
 
     return registries
 

@@ -25,7 +25,7 @@ oom_score = 0
 [plugins]
   [plugins.cgroups]
     no_prometheus = false
-  [plugins.cri]
+  [plugins."io.containerd.grpc.v1.cri"]
     stream_server_address = "127.0.0.1"
     stream_server_port = "0"
     enable_selinux = false
@@ -34,52 +34,58 @@ oom_score = 0
     systemd_cgroup = false
     enable_tls_streaming = false
     max_container_log_line_size = 16384
-    [plugins.cri.containerd]
+    [plugins."io.containerd.grpc.v1.cri".containerd]
       no_pivot = false
-      [plugins.cri.containerd.default_runtime]
+      [plugins."io.containerd.grpc.v1.cri".containerd.default_runtime]
         runtime_type = "io.containerd.runtime.v1.linux"
 	  {% if untrusted %}
-      [plugins.cri.containerd.untrusted_workload_runtime]
+      [plugins."io.containerd.grpc.v1.cri".containerd.untrusted_workload_runtime]
         runtime_type= "io.containerd.{{ untrusted_name }}.v2"
 	  {% endif %}
-      [plugins.cri.containerd.runtimes]
-        [plugins.cri.containerd.runtimes.runc]
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
           runtime_type = "io.containerd.runc.v1"
 	    {% if untrusted %}
-        [plugins.cri.containerd.runtimes.{{ untrusted_name }}]
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.{{ untrusted_name }}]
           runtime_type= "io.containerd.{{ untrusted_name }}.v2"
-          [plugins.cri.containerd.runtimes.{{ untrusted_name }}.options]
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.{{ untrusted_name }}.options]
             Runtime = "{{ untrusted_binary }}"
             RuntimeRoot = "{{ untrusted_path }}"
 		{% endif %}
-    [plugins.cri.cni]
+    [plugins."io.containerd.grpc.v1.cri".cni]
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"
       conf_template = ""
-    [plugins.cri.registry]
-      [plugins.cri.registry.mirrors]
-        [plugins.cri.registry.mirrors."docker.io"]
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
           endpoint = ["https://registry-1.docker.io"]
     {% if custom_registries %}
-      [plugins.cri.registry.auths]
+      {% for registry in custom_registries %}
+        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."{{ registry.name|default(registry.url) }}"]
+          endpoint = ["{{ registry.url }}"]
+      {% endfor %}
+    {% endif %}
+    {% if custom_registries %}
+      [plugins."io.containerd.grpc.v1.cri".registry.auths]
       {% for registry in custom_registries %}
         {% if registry.username and registry.password  %}
-        [plugins.cri.registry.auths."{{ registry.url }}"]
+        [plugins."io.containerd.grpc.v1.cri".registry.auths."{{ registry.name|default(registry.url) }}"]
           username = "{{ registry.username }}"
           password = "{{ registry.password }}"
         {% endif %}
       {% endfor %}
-      [plugins.cri.registry.configs]
+      [plugins."io.containerd.grpc.v1.cri".registry.configs]
       {% for registry in custom_registries %}
         {% if registry.ca and registry.cert and registry.key  %}
-        [plugins.cri.registry.configs."{{ registry.url }}".tls]
+        [plugins."io.containerd.grpc.v1.cri".registry.configs."{{ registry.name }}".tls]
           ca_file   = "{{ registry.ca }}"
           cert_file = "{{ registry.cert }}"
           key_file  = "{{ registry.key }}"
         {% endif %}
       {% endfor %}
     {% endif %}
-    [plugins.cri.x509_key_pair_streaming]
+    [plugins."io.containerd.grpc.v1.cri".x509_key_pair_streaming]
       tls_cert_file = ""
       tls_key_file = ""
   [plugins.diff-service]
