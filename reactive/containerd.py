@@ -131,6 +131,12 @@ def upgrade_charm():
     config_changed()
 
 
+@hook('pre-series-upgrade')
+def pre_series_upgrade():
+    """Set the status during series upgrade."""
+    status_set('blocked', 'Series upgrade in progress')
+
+
 @when_not('containerd.br_netfilter.enabled')
 def enable_br_netfilter_module():
     """

@@ -1,7 +1,5 @@
-import sys
-from unittest.mock import MagicMock
+import charms.unit_test
 
-# mock dependencies which we don't care about covering in our tests
-ch = MagicMock()
-sys.modules['charmhelpers'] = ch
-sys.modules['charmhelpers.core'] = ch.core
+
+charms.unit_test.patch_reactive()
+charms.unit_test.patch_module('requests')
