@@ -120,10 +120,7 @@ def merge_custom_registries(custom_registries):
 
     for registry in registries:
         if not registry.get('name'):
-            if '://' in registry['url']:
                 registry['name'] = registry['url'].split('://')[1]
-            else:
-                registry['name'] = registry['url']
 
     return registries
 
@@ -494,7 +491,8 @@ def configure_registry():
     registry = endpoint_from_flag('endpoint.docker-registry.ready')
 
     docker_registry = {
-        'url': registry.registry_netloc
+        'url': registry.registry_url,
+        'name': registry.registry_netloc,
     }
 
     # Handle auth data.
