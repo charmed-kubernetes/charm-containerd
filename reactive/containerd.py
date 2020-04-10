@@ -120,7 +120,7 @@ def merge_custom_registries(custom_registries):
 
     for registry in registries:
         if not registry.get('name'):
-                registry['name'] = registry['url'].split('://')[1]
+            registry['name'] = registry['url'].split('://')[1]
 
     return registries
 
