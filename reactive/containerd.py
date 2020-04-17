@@ -20,7 +20,7 @@ from charms.reactive import (
     endpoint_from_flag
 )
 
-from charms.layer import containerd
+from charms.layer import containerd, status
 from charms.layer.container_runtime_common import (
     ca_crt_path,
     server_crt_path,
@@ -36,7 +36,6 @@ from charmhelpers.core import (
 from charmhelpers.core.templating import render
 from charmhelpers.core.hookenv import (
     atexit,
-    status_set,
     config,
     log,
     application_version_set
@@ -90,17 +89,16 @@ def charm_status():
     :return: None
     """
     if is_state('containerd.nvidia.invalid-option'):
-        status_set(
-            'blocked',
+        status.blocked(
             '{} is an invalid option for gpu_driver'.format(
                 config().get('gpu_driver')
             )
         )
     elif _check_containerd():
-        status_set('active', 'Container runtime available')
+        status.active('Container runtime available')
         set_state('containerd.ready')
     else:
-        status_set('blocked', 'Container runtime not available')
+        status.blocked('Container runtime not available')
 
 
 def merge_custom_registries(custom_registries):
@@ -161,7 +159,7 @@ def install_containerd():
 
     :return: None
     """
-    status_set('maintenance', 'Installing containerd via apt')
+    status.maintenance('Installing containerd via apt')
     apt_update()
     apt_install(CONTAINERD_PACKAGE, fatal=True)
     apt_hold(CONTAINERD_PACKAGE)
@@ -228,7 +226,7 @@ def configure_nvidia():
 
     :return: None
     """
-    status_set('maintenance', 'Installing Nvidia drivers.')
+    status.maintenance('Installing Nvidia drivers.')
 
     dist = host.lsb_release()
     release = '{}{}'.format(
@@ -285,7 +283,7 @@ def purge_containerd():
 
     :return: None
     """
-    status_set('maintenance', 'Removing containerd from principal')
+    status.maintenance('Removing containerd from principal')
 
     host.service_stop('containerd.service')
     apt_unhold(CONTAINERD_PACKAGE)
@@ -327,7 +325,7 @@ def gpu_config_changed():
 @when_not('endpoint.containerd.departed')
 def config_changed():
     """
-    Render the config template and restart the service.
+    Render the config template.
 
     :return: None
     """
@@ -378,8 +376,7 @@ def config_changed():
         context
     )
 
-    log('Restarting containerd.service')
-    host.service_restart('containerd.service')
+    set_state('containerd.restart')
 
 
 @when('containerd.ready')
@@ -418,8 +415,23 @@ def proxy_changed():
             return  # We don't need to restart the daemon.
 
     check_call(['systemctl', 'daemon-reload'])
-    log('Restarting containerd.service')
-    host.service_restart('containerd.service')
+    set_state('containerd.restart')
+
+
+@when('containerd.restart')
+@when_not('endpoint.containerd.departed')
+def restart_containerd():
+    """
+    Restart the containerd service.
+
+    If the restart fails, this function will log a message and be retried on
+    the next hook.
+    """
+    status.maintenance('Restarting containerd')
+    if host.service_restart('containerd.service'):
+        remove_state('containerd.restart')
+    else:
+        log('Failed to restart containerd; will retry')
 
 
 @when('containerd.ready')
