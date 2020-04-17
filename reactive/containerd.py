@@ -325,7 +325,7 @@ def gpu_config_changed():
 @when_not('endpoint.containerd.departed')
 def config_changed():
     """
-    Render the config template and restart the service.
+    Render the config template.
 
     :return: None
     """
@@ -376,8 +376,7 @@ def config_changed():
         context
     )
 
-    log('Restarting containerd.service')
-    host.service_restart('containerd.service')
+    set_state('containerd.restart')
 
 
 @when('containerd.ready')
@@ -416,8 +415,23 @@ def proxy_changed():
             return  # We don't need to restart the daemon.
 
     check_call(['systemctl', 'daemon-reload'])
-    log('Restarting containerd.service')
-    host.service_restart('containerd.service')
+    set_state('containerd.restart')
+
+
+@when('containerd.restart')
+@when_not('endpoint.containerd.departed')
+def restart_containerd():
+    """
+    Restart the containerd service.
+
+    If the restart fails, this function will log a message and be retried on
+    the next hook.
+    """
+    status.maintenance('Restarting containerd')
+    if host.service_restart('containerd.service'):
+        remove_state('containerd.restart')
+    else:
+        log('Failed to restart containerd; will retry')
 
 
 @when('containerd.ready')
