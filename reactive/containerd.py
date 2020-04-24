@@ -88,7 +88,9 @@ def charm_status():
 
     :return: None
     """
-    if is_state('containerd.nvidia.invalid-option'):
+    if is_state('upgrade.series.in-progress'):
+        status.blocked('Series upgrade in progress')
+    elif is_state('containerd.nvidia.invalid-option'):
         status.blocked(
             '{} is an invalid option for gpu_driver'.format(
                 config().get('gpu_driver')
