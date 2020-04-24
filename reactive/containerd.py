@@ -88,7 +88,9 @@ def charm_status():
 
     :return: None
     """
-    if is_state('containerd.nvidia.invalid-option'):
+    if is_state('upgrade.series.in-progress'):
+        status.blocked('Series upgrade in progress')
+    elif is_state('containerd.nvidia.invalid-option'):
         status.blocked(
             '{} is an invalid option for gpu_driver'.format(
                 config().get('gpu_driver')
@@ -129,12 +131,6 @@ def upgrade_charm():
 
     # Re-render config in case the template has changed in the new charm.
     config_changed()
-
-
-@hook('pre-series-upgrade')
-def pre_series_upgrade():
-    """Set the status during series upgrade."""
-    status_set('blocked', 'Series upgrade in progress')
 
 
 @when_not('containerd.br_netfilter.enabled')
