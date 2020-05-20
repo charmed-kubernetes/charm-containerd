@@ -1,6 +1,9 @@
+import os
+import json
 from unittest.mock import patch
 from charms.reactive import is_state
 from reactive import containerd
+import tempfile
 
 
 def test_series_upgrade():
@@ -14,3 +17,19 @@ def test_series_upgrade():
     with patch('reactive.containerd._check_containerd', return_value=False):
         containerd.charm_status()
     containerd.status.blocked.assert_called_once_with('Series upgrade in progress')
+
+
+def test_merge_custom_registries():
+    """Verify merges of registries."""
+    with tempfile.TemporaryDirectory() as dir:
+        config = [{
+            "url": "my.registry:port",
+            "username": "user",
+            "password": "pass"
+        }, {
+            "url": "my.other.registry",
+            "ca_file": "aGVsbG8gd29ybGQK"
+        }]
+        containerd.merge_custom_registries(dir, json.dumps(config))
+        with open(os.path.join(dir, "my.other.registry.ca")) as f:
+            assert f.read() == "hello world\n"
