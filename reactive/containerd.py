@@ -120,6 +120,9 @@ def update_custom_tls_config(config_directory, registries):
                 try:
                     file_contents = base64.b64decode(file_b64)
                 except (binascii.Error, TypeError):
+                    log(traceback.format_exc())
+                    log("{}:{} didn't look like base64 data... skipping"
+                        .format(registry['url'], opt))
                     continue
                 registry[opt] = os.path.join(
                     config_directory, "%s.%s" % (registry['url'], opt)
