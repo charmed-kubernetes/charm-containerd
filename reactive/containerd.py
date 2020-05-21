@@ -127,7 +127,7 @@ def merge_custom_registries(config_directory, custom_registries):
                 registry[opt] = os.path.join(
                     config_directory, "%s.%s" % (registry['url'], opt)
                 )
-                with open(registry['ca'], 'wb') as f:
+                with open(registry[opt], 'wb') as f:
                     f.write(file_contents)
 
     docker_registry = DB.get('registry', None)

@@ -28,8 +28,14 @@ def test_merge_custom_registries():
             "password": "pass"
         }, {
             "url": "my.other.registry",
-            "ca_file": "aGVsbG8gd29ybGQK"
+            "ca_file": "aGVsbG8gd29ybGQgY2EtZmlsZQ==",
+            "key_file": "aGVsbG8gd29ybGQga2V5LWZpbGU=",
+            "cert_file": "aGVsbG8gd29ybGQgY2VydC1maWxl"
         }]
         containerd.merge_custom_registries(dir, json.dumps(config))
         with open(os.path.join(dir, "my.other.registry.ca")) as f:
-            assert f.read() == "hello world\n"
+            assert f.read() == "hello world ca-file"
+        with open(os.path.join(dir, "my.other.registry.key")) as f:
+            assert f.read() == "hello world key-file"
+        with open(os.path.join(dir, "my.other.registry.cert")) as f:
+            assert f.read() == "hello world cert-file"
