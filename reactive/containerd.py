@@ -116,13 +116,12 @@ def merge_custom_registries(config_directory, custom_registries):
     registries = []
     registries += json.loads(custom_registries)
     for registry in registries:
-        tls_opts = ['ca', 'key', 'cert']
-        for opt in tls_opts:
+        for opt in ['ca', 'key', 'cert']:
             file_b64 = registry.get('%s_file' % opt)
             if file_b64:
                 try:
                     file_contents = base64.b64decode(file_b64)
-                except binascii.Error:
+                except (binascii.Error, TypeError):
                     continue
                 registry[opt] = os.path.join(
                     config_directory, "%s.%s" % (registry['url'], opt)
