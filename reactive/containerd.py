@@ -105,16 +105,14 @@ def charm_status():
         status.blocked('Container runtime not available')
 
 
-def merge_custom_registries(config_directory, custom_registries):
+def update_custom_tls_config(config_directory, registries):
     """
-    Merge custom registries and Docker registries from relation.
+    Read registries config and write tls files to disk.
 
     :param str config_directory: containerd config directory
-    :param str custom_registries: juju config for custom registries
+    :param List registries: juju config for custom registries
     :return: List Dictionary merged registries
     """
-    registries = []
-    registries += json.loads(custom_registries)
     for registry in registries:
         for opt in ['ca', 'key', 'cert']:
             file_b64 = registry.get('%s_file' % opt)
@@ -128,6 +126,19 @@ def merge_custom_registries(config_directory, custom_registries):
                 )
                 with open(registry[opt], 'wb') as f:
                     f.write(file_contents)
+
+
+def merge_custom_registries(config_directory, custom_registries):
+    """
+    Merge custom registries and Docker registries from relation.
+
+    :param str config_directory: containerd config directory
+    :param str custom_registries: juju config for custom registries
+    :return: List Dictionary merged registries
+    """
+    registries = []
+    registries += json.loads(custom_registries)
+    update_custom_tls_config(config_directory, registries)
 
     docker_registry = DB.get('registry', None)
     if docker_registry:
