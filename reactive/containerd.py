@@ -111,7 +111,7 @@ def update_custom_tls_config(config_directory, registries):
 
     :param str config_directory: containerd config directory
     :param List registries: juju config for custom registries
-    :return: List Dictionary merged registries
+    :return: None
     """
     for registry in registries:
         for opt in ['ca', 'key', 'cert']:
