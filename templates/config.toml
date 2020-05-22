@@ -71,11 +71,12 @@ oom_score = 0
       {% endfor %}
       [plugins.cri.registry.configs]
       {% for registry in custom_registries %}
-        {% if registry.ca or registry.cert or registry.key %}
+        {% if registry.ca or registry.cert or registry.key or registry.insecure_skip_verify %}
         [plugins.cri.registry.configs."{{ registry.url }}".tls]
           ca_file   = "{{ registry.ca if registry.ca else '' }}"
           cert_file = "{{ registry.cert if registry.cert else '' }}"
           key_file  = "{{ registry.key if registry.key else '' }}"
+          insecure_skip_verify = {{ "true" if registry.insecure_skip_verify else "false" }}
         {% endif %}
       {% endfor %}
     {% endif %}
