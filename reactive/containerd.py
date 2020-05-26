@@ -83,11 +83,9 @@ def _check_containerd():
 
 def _juju_proxy_changed():
     """
-    Check to see if the Juju model
-    HTTP(S) proxy settings have changed.
+    Check to see if the Juju model HTTP(S) proxy settings have changed.
 
-    These aren't propagated to the charm
-    so we'll need to do it here.
+    These aren't propagated to the charm so we'll need to do it here.
 
     :return: Boolean
     """
@@ -97,9 +95,9 @@ def _juju_proxy_changed():
 
     new = check_for_juju_https_proxy(config)
 
-    if cached['http_proxy'] == new ['http_proxy'] and \
-            cached['https_proxy'] == new ['https_proxy'] and \
-            cached['no_proxy'] == new ['no_proxy']:
+    if cached['http_proxy'] == new['http_proxy'] and \
+            cached['https_proxy'] == new['https_proxy'] and \
+            cached['no_proxy'] == new['no_proxy']:
         return False
 
     return True
