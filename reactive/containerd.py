@@ -148,7 +148,7 @@ def update_status():
 
     :return: None
     """
-    if _juju_proxy_changed:
+    if _juju_proxy_changed():
         set_state('containerd.juju-proxy.changed')
 
 
