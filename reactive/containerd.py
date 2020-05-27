@@ -419,10 +419,7 @@ def config_changed():
 
 
 @when('containerd.installed')
-@when_any('containerd.juju-proxy.changed',
-          'config.changed.http_proxy',
-          'config.changed.https_proxy',
-          'config.changed.no_proxy')
+@when('containerd.juju-proxy.changed')
 @when_not('endpoint.containerd.departed')
 def proxy_changed():
     """
