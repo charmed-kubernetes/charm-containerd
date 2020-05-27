@@ -13,7 +13,6 @@ from charms.reactive import (
     hook,
     when,
     when_not,
-    when_any,
     set_state,
     is_state,
     remove_state,
