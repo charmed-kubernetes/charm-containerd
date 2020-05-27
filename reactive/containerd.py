@@ -418,7 +418,7 @@ def config_changed():
     set_state('containerd.restart')
 
 
-@when('containerd.ready')
+@when('containerd.installed')
 @when_any('containerd.juju-proxy.changed',
           'config.changed.http_proxy',
           'config.changed.https_proxy',
