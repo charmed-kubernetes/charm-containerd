@@ -364,7 +364,7 @@ def config_changed():
 
     :return: None
     """
-    if _juju_proxy_changed:
+    if _juju_proxy_changed():
         set_state('containerd.juju-proxy.changed')
 
     # Create "dumb" context based on Config to avoid triggering config.changed
