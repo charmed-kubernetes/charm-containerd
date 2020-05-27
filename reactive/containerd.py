@@ -13,7 +13,6 @@ from charms.reactive import (
     hook,
     when,
     when_not,
-    when_any,
     set_state,
     is_state,
     remove_state,
@@ -81,6 +80,28 @@ def _check_containerd():
     return version
 
 
+def _juju_proxy_changed():
+    """
+    Check to see if the Juju model HTTP(S) proxy settings have changed.
+
+    These aren't propagated to the charm so we'll need to do it here.
+
+    :return: Boolean
+    """
+    cached = DB.get('config-cache', None)
+    if not cached:
+        return True  # First pass.
+
+    new = check_for_juju_https_proxy(config)
+
+    if cached['http_proxy'] == new['http_proxy'] and \
+            cached['https_proxy'] == new['https_proxy'] and \
+            cached['no_proxy'] == new['no_proxy']:
+        return False
+
+    return True
+
+
 @atexit
 def charm_status():
     """
@@ -117,6 +138,17 @@ def merge_custom_registries(custom_registries):
         registries.append(docker_registry)
 
     return registries
+
+
+@hook('update-status')
+def update_status():
+    """
+    Triggered when update-status is called.
+
+    :return: None
+    """
+    if _juju_proxy_changed():
+        set_state('containerd.juju-proxy.changed')
 
 
 @hook('upgrade-charm')
@@ -331,6 +363,9 @@ def config_changed():
 
     :return: None
     """
+    if _juju_proxy_changed():
+        set_state('containerd.juju-proxy.changed')
+
     # Create "dumb" context based on Config to avoid triggering config.changed
     context = dict(config())
 
@@ -378,12 +413,12 @@ def config_changed():
         context
     )
 
+    DB.set('config-cache', context)
     set_state('containerd.restart')
 
 
-@when('containerd.ready')
-@when_any('config.changed.http_proxy', 'config.changed.https_proxy',
-          'config.changed.no_proxy')
+@when('containerd.installed')
+@when('containerd.juju-proxy.changed')
 @when_not('endpoint.containerd.departed')
 def proxy_changed():
     """
@@ -404,6 +439,7 @@ def proxy_changed():
 
         os.makedirs(service_directory, exist_ok=True)
 
+        log('Proxy changed, writing new file to {}'.format(service_path))
         render(
             service_file,
             service_path,
@@ -412,10 +448,12 @@ def proxy_changed():
 
     else:
         try:
+            log('Proxy cleaned, removing file {}'.format(service_path))
             os.remove(service_path)
         except FileNotFoundError:
             return  # We don't need to restart the daemon.
 
+    remove_state('containerd.juju-proxy.changed')
     check_call(['systemctl', 'daemon-reload'])
     set_state('containerd.restart')
 
