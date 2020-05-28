@@ -1,4 +1,6 @@
 import os
+import base64
+import binascii
 import json
 import requests
 import traceback
@@ -124,14 +126,43 @@ def charm_status():
         status.blocked('Container runtime not available')
 
 
-def merge_custom_registries(custom_registries):
+def update_custom_tls_config(config_directory, registries):
+    """
+    Read registries config and write tls files to disk.
+
+    :param str config_directory: containerd config directory
+    :param List registries: juju config for custom registries
+    :return: None
+    """
+    for registry in registries:
+        for opt in ['ca', 'key', 'cert']:
+            file_b64 = registry.get('%s_file' % opt)
+            if file_b64:
+                try:
+                    file_contents = base64.b64decode(file_b64)
+                except (binascii.Error, TypeError):
+                    log(traceback.format_exc())
+                    log("{}:{} didn't look like base64 data... skipping"
+                        .format(registry['url'], opt))
+                    continue
+                registry[opt] = os.path.join(
+                    config_directory, "%s.%s" % (registry['url'], opt)
+                )
+                with open(registry[opt], 'wb') as f:
+                    f.write(file_contents)
+
+
+def merge_custom_registries(config_directory, custom_registries):
     """
     Merge custom registries and Docker registries from relation.
 
+    :param str config_directory: containerd config directory
+    :param str custom_registries: juju config for custom registries
     :return: List Dictionary merged registries
     """
     registries = []
     registries += json.loads(custom_registries)
+    update_custom_tls_config(config_directory, registries)
 
     docker_registry = DB.get('registry', None)
     if docker_registry:
@@ -383,8 +414,11 @@ def config_changed():
     else:
         context['sandbox_image'] = containerd.get_sandbox_image()
 
+    if not os.path.isdir(config_directory):
+        os.mkdir(config_directory)
+
     context['custom_registries'] = \
-        merge_custom_registries(context['custom_registries'])
+        merge_custom_registries(config_directory, context['custom_registries'])
 
     untrusted = DB.get('untrusted')
     if untrusted:
@@ -403,9 +437,6 @@ def config_changed():
     if not is_state('containerd.nvidia.available') \
             and context.get('runtime') == 'auto':
         context['runtime'] = 'runc'
-
-    if not os.path.isdir(config_directory):
-        os.mkdir(config_directory)
 
     render(
         config_file,
