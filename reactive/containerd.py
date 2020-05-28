@@ -168,6 +168,9 @@ def update_custom_tls_config(config_directory, registries, old_registries):
                     log(traceback.format_exc())
                     log("{}:{} didn't look like base64 data... skipping"
                         .format(registry['url'], opt))
+                    status.blocked(
+                        'Invalid base64 data in custom_registries: {}:{}_file'.format(
+                            registry['url'], opt))
                     continue
                 registry[opt] = os.path.join(
                     config_directory, "%s.%s" % (strip_url(registry['url']), opt)
