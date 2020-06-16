@@ -444,7 +444,6 @@ def config_changed():
         context
     )
 
-    DB.set('config-cache', context)
     set_state('containerd.restart')
 
 
@@ -483,6 +482,8 @@ def proxy_changed():
             os.remove(service_path)
         except FileNotFoundError:
             return  # We don't need to restart the daemon.
+
+    DB.set('config-cache', context)
 
     remove_state('containerd.juju-proxy.changed')
     check_call(['systemctl', 'daemon-reload'])
