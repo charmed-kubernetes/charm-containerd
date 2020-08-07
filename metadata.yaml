@@ -10,8 +10,8 @@ description: |
 tags:
   - containers
 series:
-  - bionic
   - focal
+  - bionic
 subordinate: true
 requires:
   containerd:
