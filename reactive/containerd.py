@@ -152,6 +152,26 @@ def update_custom_tls_config(config_directory, registries):
                     f.write(file_contents)
 
 
+def populate_host_for_custom_registries(custom_registries):
+    """Populate host field from url if missing for custom registries.
+
+    Examples:
+        url: http://10.10.10.10:8000 --> host: 10.10.10.10:8000
+        url: https://myregistry.io:8000/ --> host: myregistry.io:8000
+        url: myregistry.io:8000 --> host: myregistry.io:8000
+    """
+    # only do minimal changes to custom_registries when conditions apply
+    # otherwise return it directly as it is
+    if isinstance(custom_registries, list):
+        for registry in custom_registries:
+            if not registry.get('host'):
+                url = registry.get('url')
+                if url:
+                    registry['host'] = url.rstrip('/').split(sep='://', maxsplit=1)[-1]
+
+    return custom_registries
+
+
 def merge_custom_registries(config_directory, custom_registries):
     """
     Merge custom registries and Docker registries from relation.
@@ -162,6 +182,8 @@ def merge_custom_registries(config_directory, custom_registries):
     """
     registries = []
     registries += json.loads(custom_registries)
+    # json string already converted to python list here
+    registries = populate_host_for_custom_registries(registries)
     update_custom_tls_config(config_directory, registries)
 
     docker_registry = DB.get('registry', None)
