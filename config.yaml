@@ -3,13 +3,16 @@ options:
     type: string
     default: "[]"
     description: |
-      Registry credentials. Setting this config allows Kubelet to pull images from
-      registries where auth is required.
-
-      The value for this config must be a JSON array of credential objects, like this:
-      [{"url": "my.registry:port", "username": "user", "password": "pass"}]
-
-      you can also supply option keys 'ca_file', 'cert_file', and 'key_file'
+      Registry endpoints and credentials. Setting this config allows Kubelet
+      to pull images from registries where auth is required.
+      The value for this config must be a JSON array of registry info, like this:
+        '[{"host": "my_registry_1", "url": "http://my.registry:port"}]'.
+      `host` could be registry host address, e.g.:  myregistry.io:9000, 10.10.10.10:5432.
+      or a name, e.g.: myregistry.io, myregistry.
+      It will be derived from `url` if not provided, e.g.:
+        url: http://10.10.10.10:8000 --> host: 10.10.10.10:8000
+      If required, you can supply credentials with option keys 'username' and 'password',
+      or 'ca_file', 'cert_file', and 'key_file' for ssl/tls communication,
       which should be base64 encoded file contents in string form
 
       "ca_file": "'$(base64 < my.custom.registry.pem)'"
