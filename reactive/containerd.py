@@ -126,6 +126,17 @@ def charm_status():
         status.blocked('Container runtime not available')
 
 
+def strip_url(url):
+    """Strip the URL of protocol, slashes etc., and keep host:port.
+
+    Examples:
+        url: http://10.10.10.10:8000 --> return: 10.10.10.10:8000
+        url: https://myregistry.io:8000/ --> return: myregistry.io:8000
+        url: myregistry.io:8000 --> return: myregistry.io:8000
+    """
+    return url.rstrip('/').split(sep='://', maxsplit=1)[-1]
+
+
 def update_custom_tls_config(config_directory, registries):
     """
     Read registries config and write tls files to disk.
@@ -146,7 +157,7 @@ def update_custom_tls_config(config_directory, registries):
                         .format(registry['url'], opt))
                     continue
                 registry[opt] = os.path.join(
-                    config_directory, "%s.%s" % (registry['url'], opt)
+                    config_directory, "%s.%s" % (strip_url(registry['url']), opt)
                 )
                 with open(registry[opt], 'wb') as f:
                     f.write(file_contents)
@@ -167,7 +178,7 @@ def populate_host_for_custom_registries(custom_registries):
             if not registry.get('host'):
                 url = registry.get('url')
                 if url:
-                    registry['host'] = url.rstrip('/').split(sep='://', maxsplit=1)[-1]
+                    registry['host'] = strip_url(url)
 
     return custom_registries
 
