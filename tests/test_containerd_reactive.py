@@ -32,7 +32,7 @@ def test_merge_custom_registries():
             "ca_file": "aGVsbG8gd29ybGQgY2EtZmlsZQ==",
             "key_file": "aGVsbG8gd29ybGQga2V5LWZpbGU=",
         }]
-        ctxs = containerd.merge_custom_registries(dir, json.dumps(config))
+        ctxs = containerd.merge_custom_registries(dir, json.dumps(config), None)
         with open(os.path.join(dir, "my.other.registry.ca")) as f:
             assert f.read() == "hello world ca-file"
         with open(os.path.join(dir, "my.other.registry.key")) as f:
@@ -41,6 +41,17 @@ def test_merge_custom_registries():
 
         for ctx in ctxs:
             assert 'url' in ctx
+
+        # Remove 'my.other.registry' from config
+        new_config = [{
+            "url": "my.registry:port",
+            "username": "user",
+            "password": "pass"
+        }]
+        ctxs = containerd.merge_custom_registries(dir, json.dumps(new_config), json.dumps(config))
+        assert not os.path.exists(os.path.join(dir, "my.other.registry.ca"))
+        assert not os.path.exists(os.path.join(dir, "my.other.registry.key"))
+        assert not os.path.exists(os.path.join(dir, "my.other.registry.cert"))
 
 
 def test_juju_proxy_changed():
