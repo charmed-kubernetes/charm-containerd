@@ -137,14 +137,27 @@ def strip_url(url):
     return url.rstrip('/').split(sep='://', maxsplit=1)[-1]
 
 
-def update_custom_tls_config(config_directory, registries):
+def update_custom_tls_config(config_directory, registries, old_registries):
     """
-    Read registries config and write tls files to disk.
+    Read registries config and remove old/write new tls files from/to disk.
 
     :param str config_directory: containerd config directory
     :param List registries: juju config for custom registries
+    :param List old_registries: old juju config for custom registries
     :return: None
     """
+    # Remove tls files of old registries; so not to leave uneeded, stale files.
+    for registry in old_registries:
+        for opt in ['ca', 'key', 'cert']:
+            file_b64 = registry.get('%s_file' % opt)
+            if file_b64:
+                registry[opt] = os.path.join(
+                    config_directory, "%s.%s" % (strip_url(registry['url']), opt)
+                )
+                if os.path.isfile(registry[opt]):
+                    os.remove(registry[opt])
+
+    # Write tls files of new registries.
     for registry in registries:
         for opt in ['ca', 'key', 'cert']:
             file_b64 = registry.get('%s_file' % opt)
@@ -183,19 +196,24 @@ def populate_host_for_custom_registries(custom_registries):
     return custom_registries
 
 
-def merge_custom_registries(config_directory, custom_registries):
+def merge_custom_registries(config_directory, custom_registries,
+                            old_custom_registries):
     """
     Merge custom registries and Docker registries from relation.
 
     :param str config_directory: containerd config directory
     :param str custom_registries: juju config for custom registries
+    :param str old_custom_registries: old juju config for custom registries
     :return: List Dictionary merged registries
     """
     registries = []
     registries += json.loads(custom_registries)
     # json string already converted to python list here
     registries = populate_host_for_custom_registries(registries)
-    update_custom_tls_config(config_directory, registries)
+    old_registries = []
+    if (old_custom_registries):
+        old_registries += json.loads(old_custom_registries)
+    update_custom_tls_config(config_directory, registries, old_registries)
 
     docker_registry = DB.get('registry', None)
     if docker_registry:
@@ -450,8 +468,15 @@ def config_changed():
     if not os.path.isdir(config_directory):
         os.mkdir(config_directory)
 
+    # If custom_registries changed, make sure to remove old tls files.
+    if config().changed('custom_registries'):
+        old_custom_registries = config().previous('custom_registries')
+    else:
+        old_custom_registries = None
+
     context['custom_registries'] = \
-        merge_custom_registries(config_directory, context['custom_registries'])
+        merge_custom_registries(config_directory, context['custom_registries'],
+                                old_custom_registries)
 
     untrusted = DB.get('untrusted')
     if untrusted:
