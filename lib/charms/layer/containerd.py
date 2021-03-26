@@ -34,4 +34,4 @@ def get_sandbox_image():
         else:
             sandbox_registry = upstream_registry
 
-    return '{}/pause-{}:3.1'.format(sandbox_registry, host.arch())
+    return '{}/pause-{}:3.4.1'.format(sandbox_registry, host.arch())

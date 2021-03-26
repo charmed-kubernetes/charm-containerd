@@ -12,7 +12,7 @@ from charms.layer import containerd
 def test_get_sandbox_image():
     """Verify we return a sandbox image from the appropriate registry."""
     arch.return_value = 'foo'
-    image_name = 'pause-{}:3.1'.format(arch.return_value)
+    image_name = 'pause-{}:3.4.1'.format(arch.return_value)
 
     canonical_registry = 'rocks.canonical.com:443/cdk'
     related_registry = 'my.registry.com:5000'
