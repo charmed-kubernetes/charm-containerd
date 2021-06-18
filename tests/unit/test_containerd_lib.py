@@ -19,12 +19,10 @@ def test_get_sandbox_image():
     upstream_registry = 'k8s.gcr.io'
 
     # No registry and no k8s in our goal-state: return the upstream image
-    kv().get.return_value = {}
     goal.return_value = {}
     assert containerd.get_sandbox_image() == '{}/{}'.format(upstream_registry, image_name)
 
     # No registry and no goal-state: return upstream or canonical depending on remote units
-    kv().get.return_value = {}
     goal.side_effect = NotImplementedError()
     mock_rids.return_value = ['foo']
     mock_remote.return_value = 'not-kubernetes'
@@ -35,11 +33,10 @@ def test_get_sandbox_image():
     assert containerd.get_sandbox_image() == '{}/{}'.format(canonical_registry, image_name)
 
     # No registry with k8s in our goal-state: return the canonical image
-    kv().get.return_value = {}
     goal.return_value = {'relations': {'containerd': {'kubernetes-master'}}}
     goal.side_effect = None
     assert containerd.get_sandbox_image() == '{}/{}'.format(canonical_registry, image_name)
 
     # A related registry should return registry[url]/image
-    kv().get.return_value = {'url': related_registry}
+    kv().set('registry', {'url': related_registry})
     assert containerd.get_sandbox_image() == '{}/{}'.format(related_registry, image_name)
