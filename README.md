@@ -13,4 +13,3 @@ QA, and production environments.
 This charm is a component of Charmed Kubernetes. For full information,
 please visit the [official Charmed Kubernetes docs](https://www.ubuntu.com/kubernetes/docs/charm-containerd).
 
-Note: This is a fork by Aymen Frikha of cs:~containers/containerd-146 as per LP#1938055
