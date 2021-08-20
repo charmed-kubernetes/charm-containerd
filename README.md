@@ -12,4 +12,3 @@ QA, and production environments.
 
 This charm is a component of Charmed Kubernetes. For full information,
 please visit the [official Charmed Kubernetes docs](https://www.ubuntu.com/kubernetes/docs/charm-containerd).
-
