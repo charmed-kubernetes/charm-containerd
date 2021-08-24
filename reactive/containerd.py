@@ -467,6 +467,10 @@ def config_changed():
 
     # Create "dumb" context based on Config to avoid triggering config.changed
     context = dict(config())
+    if context['config_version'] == "v2":
+        template_config = "config_v2.toml"
+    else:
+        template_config = "config.toml"
 
     config_file = 'config.toml'
     config_directory = '/etc/containerd'
@@ -514,7 +518,7 @@ def config_changed():
         context['runtime'] = 'runc'
 
     render(
-        config_file,
+        template_config,
         os.path.join(config_directory, config_file),
         context
     )
