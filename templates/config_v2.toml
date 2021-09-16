@@ -55,40 +55,38 @@ version = 2
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"
       conf_template = ""
+
+    {%- set ns = namespace (dockerio_registry = [{"host": "docker.io", "url": "https://registry-1.docker.io"}]) -%}
+    {%- for registry in custom_registries -%}
+      {%- if registry.host == "docker.io" -%}
+        {%- set ns.dockerio_registry = [] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- set registries = custom_registries + ns.dockerio_registry %}
+
     [plugins."io.containerd.grpc.v1.cri".registry]
       [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
-          endpoint = ["https://registry-1.docker.io"]
-    {% if custom_registries -%}
-      {% for registry in custom_registries -%}
-        {% if registry.host -%}
+      {%- for registry in registries %}
+        {% if registry.host %}
         [plugins."io.containerd.grpc.v1.cri".registry.mirrors."{{ registry.host }}"]
-          {% if registry.url -%}
-          endpoint = ["{{ registry.url}}"]
-          {% endif -%}
-        {% endif -%}
-      {% endfor -%}
-    {% endif -%}
-    {% if custom_registries %}
-      [plugins."io.containerd.grpc.v1.cri".registry.auths]
-      {% for registry in custom_registries %}
-        {% if registry.username and registry.password  %}
-        [plugins."io.containerd.grpc.v1.cri".registry.auths."{{ registry.url }}"]
-          username = "{{ registry.username }}"
-          password = "{{ registry.password }}"
+        {%- if registry.url %}  endpoint = ["{{ registry.url }}"]{% endif -%}
         {% endif %}
       {% endfor %}
       [plugins."io.containerd.grpc.v1.cri".registry.configs]
-      {% for registry in custom_registries %}
-        {% if registry.ca or registry.cert or registry.key or registry.insecure_skip_verify %}
-        [plugins."io.containerd.grpc.v1.cri".registry.configs."{{ registry.url }}".tls]
+      {%- for registry in registries %}
+        {% if registry.username and registry.password %}
+        [plugins."io.containerd.grpc.v1.cri".registry.config."{{ registry.host }}".auth]
+          username = "{{ registry.username }}"
+          password = "{{ registry.password }}"
+        {% endif %}
+        {% if registry.ca or registry.cert or registry.key or registry.insecure_skip_verify-%}
+        [plugins."io.containerd.grpc.v1.cri".registry.configs."{{ registry.host }}".tls]
           ca_file   = "{{ registry.ca if registry.ca else '' }}"
           cert_file = "{{ registry.cert if registry.cert else '' }}"
           key_file  = "{{ registry.key if registry.key else '' }}"
           insecure_skip_verify = {{ "true" if registry.insecure_skip_verify else "false" }}
-        {% endif %}
+      {% endif -%}
       {% endfor %}
-    {% endif %}
     [plugins."io.containerd.grpc.v1.cri".x509_key_pair_streaming]
       tls_cert_file = ""
       tls_key_file = ""

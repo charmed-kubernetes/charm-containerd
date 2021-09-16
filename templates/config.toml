@@ -56,40 +56,42 @@ oom_score = 0
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"
       conf_template = ""
+
+    {%- set ns = namespace (dockerio_registry = [{"host": "docker.io", "url": "https://registry-1.docker.io"}]) -%}
+    {%- for registry in custom_registries -%}
+      {%- if registry.host == "docker.io" -%}
+        {%- set ns.dockerio_registry = [] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- set registries = custom_registries + ns.dockerio_registry %}
+
     [plugins.cri.registry]
       [plugins.cri.registry.mirrors]
-        [plugins.cri.registry.mirrors."docker.io"]
-          endpoint = ["https://registry-1.docker.io"]
-    {% if custom_registries -%}
-      {% for registry in custom_registries -%}
-        {% if registry.host -%}
+      {%- for registry in registries %}
+        {% if registry.host %}
         [plugins.cri.registry.mirrors."{{ registry.host }}"]
-          {% if registry.url -%}
-          endpoint = ["{{ registry.url}}"]
-          {% endif -%}
-        {% endif -%}
-      {% endfor -%}
-    {% endif -%}
-    {% if custom_registries %}
-      [plugins.cri.registry.auths]
-      {% for registry in custom_registries %}
-        {% if registry.username and registry.password  %}
-        [plugins.cri.registry.auths."{{ registry.url }}"]
-          username = "{{ registry.username }}"
-          password = "{{ registry.password }}"
+        {%- if registry.url %}  endpoint = ["{{ registry.url }}"]{% endif -%}
         {% endif %}
       {% endfor %}
+
+      [plugins.cri.registry.auths]
+      {% for registry in registries %}
+      {% if registry.username and registry.password %}
+      [plugins.cri.registry.auths."{{ registry.url }}"]
+        username = "{{ registry.username }}"
+        password = "{{ registry.password }}"
+      {% endif %}
+      {% endfor %}
       [plugins.cri.registry.configs]
-      {% for registry in custom_registries %}
-        {% if registry.ca or registry.cert or registry.key or registry.insecure_skip_verify %}
-        [plugins.cri.registry.configs."{{ registry.url }}".tls]
+      {% for registry in registries %}
+        {% if registry.ca or registry.cert or registry.key or registry.insecure_skip_verify-%}
+        [plugins.cri.registry.configs."{{ registry.host }}".tls]
           ca_file   = "{{ registry.ca if registry.ca else '' }}"
           cert_file = "{{ registry.cert if registry.cert else '' }}"
           key_file  = "{{ registry.key if registry.key else '' }}"
           insecure_skip_verify = {{ "true" if registry.insecure_skip_verify else "false" }}
-        {% endif %}
+      {% endif -%}
       {% endfor %}
-    {% endif %}
     [plugins.cri.x509_key_pair_streaming]
       tls_cert_file = ""
       tls_key_file = ""
