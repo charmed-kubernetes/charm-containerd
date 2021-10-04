@@ -196,6 +196,22 @@ def populate_host_for_custom_registries(custom_registries):
     return custom_registries
 
 
+def insert_docker_io_to_custom_registries(custom_registries):
+    """
+    Ensure the default docker.io registry exists.
+
+    Also gives a way for configuration to override the url for it.
+    If a docker.io host entry doesn't exist, we'll add one.
+    """
+    if isinstance(custom_registries, list):
+        if not any(d.get('host') == 'docker.io' for d in custom_registries):
+            custom_registries.insert(0, {
+                "host": "docker.io",
+                "url": "https://registry-1.docker.io"
+            })
+    return custom_registries
+
+
 def merge_custom_registries(config_directory, custom_registries,
                             old_custom_registries):
     """
@@ -210,6 +226,7 @@ def merge_custom_registries(config_directory, custom_registries,
     registries += json.loads(custom_registries)
     # json string already converted to python list here
     registries = populate_host_for_custom_registries(registries)
+    registries = insert_docker_io_to_custom_registries(registries)
     old_registries = []
     if (old_custom_registries):
         old_registries += json.loads(old_custom_registries)
