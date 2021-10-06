@@ -18,7 +18,8 @@ from charms.reactive import (
     set_state,
     is_state,
     remove_state,
-    endpoint_from_flag
+    endpoint_from_flag,
+    register_trigger
 )
 
 from charms.layer import containerd, status
@@ -59,10 +60,18 @@ DB = unitdata.kv()
 
 CONTAINERD_PACKAGE = 'containerd'
 
-NVIDIA_PACKAGES = [
-    'cuda-drivers',
-    'nvidia-container-runtime',
-]
+register_trigger(
+    when='config.changed.nvidia_apt_key_urls',
+    clear_flag='containerd.nvidia.ready'
+)
+register_trigger(
+    when='config.changed.nvidia_apt_sources',
+    clear_flag='containerd.nvidia.ready'
+)
+register_trigger(
+    when='config.changed.nvidia_apt_packages',
+    clear_flag='containerd.nvidia.ready'
+)
 
 
 def _check_containerd():
@@ -263,6 +272,16 @@ def upgrade_charm():
     # Re-render config in case the template has changed in the new charm.
     config_changed()
 
+    # Clean up old nvidia sources.list.d files
+    old_source_files = [
+        '/etc/apt/sources.list.d/nvidia-container-runtime.list',
+        '/etc/apt/sources.list.d/cuda.list'
+    ]
+    for source_file in old_source_files:
+        if os.path.exists(source_file):
+            os.remove(source_file)
+            remove_state('containerd.nvidia.ready')
+
 
 @when_not('containerd.br_netfilter.enabled')
 def enable_br_netfilter_module():
@@ -362,48 +381,38 @@ def configure_nvidia():
     status.maintenance('Installing Nvidia drivers.')
 
     dist = host.lsb_release()
-    release = '{}{}'.format(
-        dist['DISTRIB_ID'].lower(),
-        dist['DISTRIB_RELEASE']
-    )
+    os_release_id = dist['DISTRIB_ID'].lower()
+    os_release_version_id = dist['DISTRIB_RELEASE']
+    os_release_version_id_no_dot = os_release_version_id.replace('.', '')
     proxies = {
         "http": config('http_proxy'),
         "https": config('https_proxy')
     }
-    ncr_gpg_key = requests.get(
-        'https://nvidia.github.io/nvidia-container-runtime/gpgkey', proxies=proxies).text
-    import_key(ncr_gpg_key)
-    with open(
-        '/etc/apt/sources.list.d/nvidia-container-runtime.list', 'w'
-    ) as f:
-        f.write(
-            'deb '
-            'https://nvidia.github.io/libnvidia-container/{}/$(ARCH) /\n'
-            .format(release)
+    key_urls = config('nvidia_apt_key_urls').split()
+    for key_url in key_urls:
+        formatted_key_url = key_url.format(
+            id=os_release_id,
+            version_id=os_release_version_id,
+            version_id_no_dot=os_release_version_id_no_dot
         )
-        f.write(
-            'deb '
-            'https://nvidia.github.io/nvidia-container-runtime/{}/$(ARCH) /\n'
-            .format(release)
-        )
+        gpg_key = requests.get(formatted_key_url, proxies=proxies).text
+        import_key(gpg_key)
 
-    cuda_gpg_key = requests.get(
-        'https://developer.download.nvidia.com/'
-        'compute/cuda/repos/{}/x86_64/7fa2af80.pub'
-        .format(release.replace('.', '')), proxies=proxies
-    ).text
-    import_key(cuda_gpg_key)
-    with open('/etc/apt/sources.list.d/cuda.list', 'w') as f:
-        f.write(
-            'deb '
-            'http://developer.download.nvidia.com/'
-            'compute/cuda/repos/{}/x86_64 /\n'
-            .format(release.replace('.', ''))
+    sources = config('nvidia_apt_sources').splitlines()
+    formatted_sources = [
+        source.format(
+            id=os_release_id,
+            version_id=os_release_version_id,
+            version_id_no_dot=os_release_version_id_no_dot
         )
+        for source in sources
+    ]
+    with open('/etc/apt/sources.list.d/nvidia.list', 'w') as f:
+        f.write('\n'.join(formatted_sources))
 
     apt_update()
-
-    apt_install(NVIDIA_PACKAGES, fatal=True)
+    packages = config('nvidia_apt_packages').split()
+    apt_install(packages, fatal=True)
 
     set_state('containerd.nvidia.ready')
     config_changed()
@@ -423,11 +432,11 @@ def purge_containerd():
     apt_purge(CONTAINERD_PACKAGE, fatal=True)
 
     if is_state('containerd.nvidia.ready'):
-        apt_purge(NVIDIA_PACKAGES, fatal=True)
+        nvidia_packages = config('nvidia_apt_packages').split()
+        apt_purge(nvidia_packages, fatal=True)
 
     sources = [
-        '/etc/apt/sources.list.d/cuda.list',
-        '/etc/apt/sources.list.d/nvidia-container-runtime.list'
+        '/etc/apt/sources.list.d/nvidia.list'
     ]
 
     for f in sources:
