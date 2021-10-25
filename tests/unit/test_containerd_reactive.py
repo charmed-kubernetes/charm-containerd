@@ -5,6 +5,7 @@ from charmhelpers.core import unitdata
 from charms.reactive import is_state
 from reactive import containerd
 import tempfile
+import pytest
 
 
 def test_series_upgrade():
@@ -20,6 +21,33 @@ def test_series_upgrade():
     containerd.status.blocked.assert_called_once_with('Series upgrade in progress')
 
 
+@pytest.mark.parametrize('registry_errors', [
+    ('', 'Failed to decode json string'),
+    ('{}', "custom_registries is not a list"),
+    ('[1]', "registry #0 is not in object form"),
+    ('[{}]', "registry #0 missing required field url"),
+    ('[{"url": 1}]', "registry #0 field url=1 is not a string"),
+    ('[{"url": "", "insecure_skip_verify": "FALSE"}]', "registry #0 field insecure_skip_verify='FALSE' is not falsey"),
+    ('[{"url": "", "ca": "abc"}]', "registry #0 field ca may not be specified"),
+    ('[{"url": "https://docker.io"}, {"url": "https://docker.io"}]', "registry #1 defines docker.io more than once"),
+    ('[]', None),
+], ids=[
+    'Invalid JSON',
+    'Not a List',
+    'List Item not an object',
+    'Missing required field',
+    'Non-stringly typed field',
+    'Accidentally truthy',
+    "Restricted field",
+    "Duplicate host",
+    "No errors"
+])
+def test_invalid_custom_registries(registry_errors):
+    """Verify error status for invalid custom registries configurations."""
+    registries, error = registry_errors
+    assert containerd.invalid_custom_registries(registries) == error
+
+
 def test_merge_custom_registries():
     """Verify merges of registries."""
     with tempfile.TemporaryDirectory() as dir:
@@ -31,6 +59,7 @@ def test_merge_custom_registries():
             "url": "my.other.registry",
             "ca_file": "aGVsbG8gd29ybGQgY2EtZmlsZQ==",
             "key_file": "aGVsbG8gd29ybGQga2V5LWZpbGU=",
+            "cert_file": "abc"  # invalid base64 is ignored
         }]
         ctxs = containerd.merge_custom_registries(dir, json.dumps(config), None)
         with open(os.path.join(dir, "my.other.registry.ca")) as f:
