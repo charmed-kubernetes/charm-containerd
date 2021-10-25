@@ -57,8 +57,6 @@ version = 2
       conf_template = ""
     [plugins."io.containerd.grpc.v1.cri".registry]
       [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
-          endpoint = ["https://registry-1.docker.io"]
     {% if custom_registries -%}
       {% for registry in custom_registries -%}
         {% if registry.host -%}
