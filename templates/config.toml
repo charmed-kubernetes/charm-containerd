@@ -38,56 +38,53 @@ oom_score = 0
       no_pivot = false
       [plugins.cri.containerd.default_runtime]
         runtime_type = "io.containerd.runtime.v1.linux"
-	  {% if untrusted %}
+      {%- if untrusted %}
       [plugins.cri.containerd.untrusted_workload_runtime]
         runtime_type= "io.containerd.{{ untrusted_name }}.v2"
-	  {% endif %}
+      {% endif %}
       [plugins.cri.containerd.runtimes]
         [plugins.cri.containerd.runtimes.runc]
           runtime_type = "io.containerd.runc.v1"
-	    {% if untrusted %}
+        {%- if untrusted %}
         [plugins.cri.containerd.runtimes.{{ untrusted_name }}]
           runtime_type= "io.containerd.{{ untrusted_name }}.v2"
           [plugins.cri.containerd.runtimes.{{ untrusted_name }}.options]
             Runtime = "{{ untrusted_binary }}"
             RuntimeRoot = "{{ untrusted_path }}"
-		{% endif %}
+        {% endif %}
     [plugins.cri.cni]
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"
       conf_template = ""
     [plugins.cri.registry]
       [plugins.cri.registry.mirrors]
-    {% if custom_registries -%}
-      {% for registry in custom_registries -%}
-        {% if registry.host -%}
+      {%- if custom_registries %}
+      {%- for registry in custom_registries %}
+        {%- if registry.host %}
         [plugins.cri.registry.mirrors."{{ registry.host }}"]
-          {% if registry.url -%}
+          {%- if registry.url %}
           endpoint = ["{{ registry.url}}"]
-          {% endif -%}
+          {%- endif -%}
         {% endif -%}
-      {% endfor -%}
-    {% endif -%}
-    {% if custom_registries %}
-      [plugins.cri.registry.auths]
-      {% for registry in custom_registries %}
-        {% if registry.username and registry.password  %}
-        [plugins.cri.registry.auths."{{ registry.url }}"]
+      {% endfor%}
+      [plugins.cri.registry.configs]
+      {%- for registry in custom_registries %}
+        {%- if registry.username and registry.password %}
+        [plugins.cri.registry.configs."{{ registry.url }}".auth]
           username = "{{ registry.username }}"
           password = "{{ registry.password }}"
-        {% endif %}
-      {% endfor %}
-      [plugins.cri.registry.configs]
-      {% for registry in custom_registries %}
-        {% if registry.ca or registry.cert or registry.key or registry.insecure_skip_verify %}
+        {%- endif -%}
+      {% endfor -%}
+      {%- for registry in custom_registries %}
+        {%- if registry.ca or registry.cert or registry.key or registry.insecure_skip_verify %}
         [plugins.cri.registry.configs."{{ registry.url }}".tls]
           ca_file   = "{{ registry.ca if registry.ca else '' }}"
           cert_file = "{{ registry.cert if registry.cert else '' }}"
           key_file  = "{{ registry.key if registry.key else '' }}"
           insecure_skip_verify = {{ "true" if registry.insecure_skip_verify else "false" }}
-        {% endif %}
-      {% endfor %}
-    {% endif %}
+        {%- endif -%}
+      {% endfor -%}
+      {%- endif %}
     [plugins.cri.x509_key_pair_streaming]
       tls_cert_file = ""
       tls_key_file = ""
@@ -109,4 +106,3 @@ oom_score = 0
     mutation_threshold = 100
     schedule_delay = "0s"
     startup_delay = "100ms"
-
