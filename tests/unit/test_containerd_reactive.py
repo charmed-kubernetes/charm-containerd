@@ -27,8 +27,8 @@ def test_series_upgrade():
     ('[1]', "registry #0 is not in object form"),
     ('[{}]', "registry #0 missing required field url"),
     ('[{"url": 1}]', "registry #0 field url=1 is not a string"),
-    ('[{"url": "", "insecure_skip_verify": "FALSE"}]', "registry #0 field insecure_skip_verify='FALSE' is not falsey"),
-    ('[{"url": "", "ca": "abc"}]', "registry #0 field ca may not be specified"),
+    ('[{"url": "", "insecure_skip_verify": "FALSE"}]', "registry #0 field insecure_skip_verify='FALSE' is not a boolean"),
+    ('[{"url": "", "why-am-i-here": "abc"}]', "registry #0 field why-am-i-here may not be specified"),
     ('[{"url": "https://docker.io"}, {"url": "https://docker.io"}]', "registry #1 defines docker.io more than once"),
     ('[]', None),
 ], ids=[
@@ -46,6 +46,23 @@ def test_invalid_custom_registries(registry_errors):
     """Verify error status for invalid custom registries configurations."""
     registries, error = registry_errors
     assert containerd.invalid_custom_registries(registries) == error
+
+
+def test_registries_list():
+    """Verify _registries_list resolves json to a list of objects, or returns default."""
+    assert containerd._registries_list('[]') == []
+    assert containerd._registries_list('[{}]') == [{}]
+
+    default = []
+    assert containerd._registries_list('[{]', default) is default, "return default when invalid json"
+    assert containerd._registries_list('{}', default) is default, "return default when valid json isn't a list"
+
+    with pytest.raises(json.JSONDecodeError) as ie:
+        containerd._registries_list('[{]')
+
+    with pytest.raises(containerd.InvalidCustomRegistriesError) as ie:
+        containerd._registries_list('{}')
+    assert "'{}' is not a list" == str(ie.value)
 
 
 def test_merge_custom_registries():

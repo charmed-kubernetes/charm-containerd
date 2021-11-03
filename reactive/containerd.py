@@ -221,6 +221,10 @@ def insert_docker_io_to_custom_registries(custom_registries):
     return custom_registries
 
 
+class InvalidCustomRegistriesError(Exception):
+    """Error for Invalid Registry decoding"""
+
+
 def _registries_list(registries, default=None):
     """
     Parse registry config and ensure it returns a list or raises ValueError.
@@ -232,12 +236,15 @@ def _registries_list(registries, default=None):
     registry_list = default
     try:
         registry_list = json.loads(registries)
-    except json.JSONDecodeError:
-        if not default:
+    except json.JSONDecodeError as e:
+        if default is None:
             raise
 
-    if not isinstance(registry_list, list) and default is None:
-        raise ValueError("not a list")
+    if not isinstance(registry_list, list):
+        if default is None:
+            raise InvalidCustomRegistriesError("'{}' is not a list".format(registries))
+        else:
+            return default
 
     return registry_list
 
@@ -280,14 +287,15 @@ def invalid_custom_registries(custom_registries):
     try:
         registries = _registries_list(custom_registries)
     except json.JSONDecodeError:
+        log(traceback.format_exc())
         return "Failed to decode json string"
-    except ValueError as e:
+    except InvalidCustomRegistriesError:
+        log(traceback.format_exc())
         return "custom_registries is not a list"
 
     required_fields = ['url']
-    str_fields = ['host', 'username', 'password', 'ca_file', 'cert_file', 'key_file']
+    str_fields = ['url', 'host', 'username', 'password', 'ca_file', 'cert_file', 'key_file']
     truthy_fields = ['insecure_skip_verify', ]
-    restricted_fields = ['ca', 'cert', 'key']
     host_set = set()
     for idx, registry in enumerate(registries):
         if not isinstance(registry, dict):
@@ -301,10 +309,10 @@ def invalid_custom_registries(custom_registries):
                 return "registry #{} field {}={} is not a string".format(idx, field, value)
         for field in truthy_fields:
             value = registry.get(field)
-            if isinstance(value, str) and "false" in value.lower():
-                return "registry #{} field {}='{}' is not falsey".format(idx, field, value)
-        for field in restricted_fields:
-            if field in registry:
+            if field in registry and not isinstance(value, bool):
+                return "registry #{} field {}='{}' is not a boolean".format(idx, field, value)
+        for field in registry:
+            if field not in str_fields + truthy_fields:
                 return "registry #{} field {} may not be specified".format(idx, field)
 
         this_host = registry.get('host') or strip_url(registry['url'])
