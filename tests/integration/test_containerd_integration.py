@@ -12,6 +12,7 @@ async def test_build_and_deploy(ops_test):
     bundle = ops_test.render_bundle(
         "tests/data/bundle.yaml",
         master_charm=await ops_test.build_charm("."),
+        series="focal",
     )
     # Use CLI to deploy bundle until https://github.com/juju/python-libjuju/pull/497
     # is released.
