@@ -658,7 +658,8 @@ def configure_registry():
     registry = endpoint_from_flag('endpoint.docker-registry.ready')
 
     docker_registry = {
-        'url': registry.registry_netloc
+        'host': strip_url(registry.registry_netloc),
+        'url': registry.registry_netloc,
     }
 
     # Handle auth data.
