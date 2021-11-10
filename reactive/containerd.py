@@ -221,6 +221,34 @@ def insert_docker_io_to_custom_registries(custom_registries):
     return custom_registries
 
 
+class InvalidCustomRegistriesError(Exception):
+    """Error for Invalid Registry decoding."""
+
+
+def _registries_list(registries, default=None):
+    """
+    Parse registry config and ensure it returns a list or raises ValueError.
+
+    :param str registries: representation of registries
+    :param default: if provided, return rather than raising exceptions
+    :return: List of registry objects
+    """
+    registry_list = default
+    try:
+        registry_list = json.loads(registries)
+    except json.JSONDecodeError:
+        if default is None:
+            raise
+
+    if not isinstance(registry_list, list):
+        if default is None:
+            raise InvalidCustomRegistriesError("'{}' is not a list".format(registries))
+        else:
+            return default
+
+    return registry_list
+
+
 def merge_custom_registries(config_directory, custom_registries,
                             old_custom_registries):
     """
@@ -232,13 +260,13 @@ def merge_custom_registries(config_directory, custom_registries,
     :return: List Dictionary merged registries
     """
     registries = []
-    registries += json.loads(custom_registries)
+    registries += _registries_list(custom_registries, default=[])
     # json string already converted to python list here
     registries = populate_host_for_custom_registries(registries)
     registries = insert_docker_io_to_custom_registries(registries)
     old_registries = []
-    if (old_custom_registries):
-        old_registries += json.loads(old_custom_registries)
+    if old_custom_registries:
+        old_registries += _registries_list(old_custom_registries, default=[])
     update_custom_tls_config(config_directory, registries, old_registries)
 
     docker_registry = DB.get('registry', None)
@@ -246,6 +274,51 @@ def merge_custom_registries(config_directory, custom_registries,
         registries.append(docker_registry)
 
     return registries
+
+
+def invalid_custom_registries(custom_registries):
+    """
+    Validate custom registries from config.
+
+    :param str custom_registries: juju config for custom registries
+    :return: error string for blocked status if condition exists, None otherwise
+    :rtype: Optional[str]
+    """
+    try:
+        registries = _registries_list(custom_registries)
+    except json.JSONDecodeError:
+        log(traceback.format_exc())
+        return "Failed to decode json string"
+    except InvalidCustomRegistriesError:
+        log(traceback.format_exc())
+        return "custom_registries is not a list"
+
+    required_fields = ['url']
+    str_fields = ['url', 'host', 'username', 'password', 'ca_file', 'cert_file', 'key_file']
+    truthy_fields = ['insecure_skip_verify', ]
+    host_set = set()
+    for idx, registry in enumerate(registries):
+        if not isinstance(registry, dict):
+            return "registry #{} is not in object form".format(idx)
+        for field in required_fields:
+            if field not in registry:
+                return "registry #{} missing required field {}".format(idx, field)
+        for field in required_fields + str_fields:
+            value = registry.get(field)
+            if value and not isinstance(value, str):
+                return "registry #{} field {}={} is not a string".format(idx, field, value)
+        for field in truthy_fields:
+            value = registry.get(field)
+            if field in registry and not isinstance(value, bool):
+                return "registry #{} field {}='{}' is not a boolean".format(idx, field, value)
+        for field in registry:
+            if field not in str_fields + truthy_fields:
+                return "registry #{} field {} may not be specified".format(idx, field)
+
+        this_host = registry.get('host') or strip_url(registry['url'])
+        if this_host in host_set:
+            return "registry #{} defines {} more than once".format(idx, this_host)
+        host_set.add(this_host)
 
 
 @hook('update-status')
@@ -503,6 +576,12 @@ def config_changed():
         old_custom_registries = config().previous('custom_registries')
     else:
         old_custom_registries = None
+
+    # validate custom_registries
+    invalid_reason = invalid_custom_registries(context['custom_registries'])
+    if invalid_reason:
+        status.blocked('Invalid custom_registries: {}'.format(invalid_reason))
+        return
 
     context['custom_registries'] = \
         merge_custom_registries(config_directory, context['custom_registries'],
