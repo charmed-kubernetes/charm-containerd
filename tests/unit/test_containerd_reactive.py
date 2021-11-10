@@ -27,7 +27,10 @@ def test_series_upgrade():
     ('[1]', "registry #0 is not in object form"),
     ('[{}]', "registry #0 missing required field url"),
     ('[{"url": 1}]', "registry #0 field url=1 is not a string"),
-    ('[{"url": "", "insecure_skip_verify": "FALSE"}]', "registry #0 field insecure_skip_verify='FALSE' is not a boolean"),
+    (
+        '[{"url": "", "insecure_skip_verify": "FALSE"}]',
+        "registry #0 field insecure_skip_verify='FALSE' is not a boolean"
+    ),
     ('[{"url": "", "why-am-i-here": "abc"}]', "registry #0 field why-am-i-here may not be specified"),
     ('[{"url": "https://docker.io"}, {"url": "https://docker.io"}]', "registry #1 defines docker.io more than once"),
     ('[]', None),

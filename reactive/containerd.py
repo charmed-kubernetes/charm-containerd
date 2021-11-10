@@ -222,7 +222,7 @@ def insert_docker_io_to_custom_registries(custom_registries):
 
 
 class InvalidCustomRegistriesError(Exception):
-    """Error for Invalid Registry decoding"""
+    """Error for Invalid Registry decoding."""
 
 
 def _registries_list(registries, default=None):
@@ -236,7 +236,7 @@ def _registries_list(registries, default=None):
     registry_list = default
     try:
         registry_list = json.loads(registries)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         if default is None:
             raise
 
