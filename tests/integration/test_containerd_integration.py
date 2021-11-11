@@ -26,7 +26,7 @@ async def test_build_and_deploy(ops_test):
     #                  due testing on LXD.
     #                  https://bugs.launchpad.net/charm-kubernetes-worker/+bug/1903566
     await ops_test.model.wait_for_idle(
-        apps=["containerd", "flannel", "easyrsa", "etcd", "kubernetes-worker"],
+        apps=["containerd", "flannel", "easyrsa", "etcd", "kubernetes-worker", "docker-registry"],
         wait_for_active=True,
     )
 
@@ -47,37 +47,26 @@ async def test_upgrade_containerd_action(ops_test):
     assert output.data.get("results", {}).get("runtime") == "containerd"
 
 
-async def test_containerd_registry_has_dockerio_mirror(ops_test):
-    """Test gathering the list of registries."""
-    for unit in ops_test.model.applications["containerd"].units:
-        config = await containerd_config(unit)
-        mirrors = config["plugins"]["cri"]["registry"]["mirrors"]
-        assert "docker.io" in mirrors, "docker.io missing from containerd config"
-        assert mirrors["docker.io"]["endpoint"] == ["https://registry-1.docker.io"]
-
-
 @pytest.fixture(scope="module")
-async def private_registry(ops_test):
-    """Create and connect Module Fixture for  a private registry to containerd."""
-    registry = ops_test.model.applications.get("docker-registry")
-    if not registry:
-        await ops_test.model.deploy(
-            "cs:~containers/docker-registry", "docker-registry", channel="edge"
-        )
-        registry = ops_test.model.applications["docker-registry"]
-    if not any(rel.matches("containerd:docker-registry") for rel in registry.relations):
-        await ops_test.model.add_relation(
-            "docker-registry:docker-registry", "containerd:docker-registry"
-        )
-    if not any(rel.matches("easyrsa:client") for rel in registry.relations):
-        await ops_test.model.add_relation(
-            "docker-registry:cert-provider", "easyrsa:client"
-        )
-    await ops_test.model.wait_for_idle(
-        apps=["containerd", "docker-registry", "easyrsa"], wait_for_active=True
-    )
-    yield registry
-    await registry.destroy()
+async def juju_config(ops_test):
+    """Apply configuration for a test, then revert after the test is completed."""
+    async def setup(application, **new_config):
+        to_revert[application] = await ops_test.model.applications[application].get_config(), new_config
+        await ops_test.model.applications[application].set_config(new_config)
+        await ops_test.model.wait_for_idle(apps=[application], wait_for_active=True)
+    to_revert = {}
+    yield setup
+    for app, (pre_test, settable) in to_revert.items():
+        revert_config = {key: pre_test[key]['value'] for key in settable}
+        await ops_test.model.applications[app].set_config(revert_config)
+    await ops_test.model.wait_for_idle(apps=list(to_revert.keys()), wait_for_active=True)
+
+
+@pytest.fixture(scope="module", params=["v1", "v2"])
+async def config_version(request, juju_config):
+    """Set the containerd config_version based on a parameter to run the same tests various ways."""
+    await juju_config('containerd', config_version=request.param)
+    return request.param
 
 
 async def containerd_config(unit):
@@ -88,12 +77,23 @@ async def containerd_config(unit):
     return toml.loads(stdout)
 
 
-async def test_containerd_registry_with_private_registry(ops_test, private_registry):
-    """Test whether private registry config is represented in containerd."""
-    registry_unit = private_registry.units[0]
+async def test_containerd_registry_has_dockerio_mirror(config_version, ops_test):
+    """Test gathering the list of registries."""
+    plugin = "cri" if config_version == "v1" else "io.containerd.grpc.v1.cri"
     for unit in ops_test.model.applications["containerd"].units:
         config = await containerd_config(unit)
-        configs = config["plugins"]["cri"]["registry"]["configs"]
+        mirrors = config["plugins"][plugin]["registry"]["mirrors"]
+        assert "docker.io" in mirrors, "docker.io missing from containerd config"
+        assert mirrors["docker.io"]["endpoint"] == ["https://registry-1.docker.io"]
+
+
+async def test_containerd_registry_with_private_registry(config_version, ops_test):
+    """Test whether private registry config is represented in containerd."""
+    registry_unit = ops_test.model.applications.get("docker-registry").units[0]
+    plugin = "cri" if config_version == "v1" else "io.containerd.grpc.v1.cri"
+    for unit in ops_test.model.applications["containerd"].units:
+        config = await containerd_config(unit)
+        configs = config["plugins"][plugin]["registry"]["configs"]
         assert len(configs) == 1, "registry config isn't represented in config.toml"
         docker_registry = next(iter(configs))
         assert configs[docker_registry][

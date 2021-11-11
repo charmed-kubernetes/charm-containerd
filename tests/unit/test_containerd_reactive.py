@@ -3,7 +3,6 @@ import os
 import json
 from unittest.mock import patch
 
-import pytest
 from charmhelpers.core import unitdata
 from charmhelpers.core.templating import render
 from charms.reactive import is_state
