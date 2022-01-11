@@ -1,11 +1,16 @@
+import pathlib
 import os
 import json
 from unittest.mock import patch
+
 from charmhelpers.core import unitdata
+from charmhelpers.core.templating import render
 from charms.reactive import is_state
 from reactive import containerd
 import tempfile
 import pytest
+
+import jinja2
 
 
 def test_series_upgrade():
@@ -101,6 +106,47 @@ def test_merge_custom_registries():
         assert not os.path.exists(os.path.join(dir, "my.other.registry.ca"))
         assert not os.path.exists(os.path.join(dir, "my.other.registry.key"))
         assert not os.path.exists(os.path.join(dir, "my.other.registry.cert"))
+
+
+@pytest.mark.parametrize("version", ("v1", "v2"))
+@patch('reactive.containerd.endpoint_from_flag')
+@patch('reactive.containerd.config')
+def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version):
+    """Verify exact rendering of config.toml files in both v1 and v2 formats."""
+    class MockConfig(dict):
+        def changed(self, *_args, **_kwargs):
+            return False
+
+    def jinja_render(source, target, context):
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader('templates')
+        )
+        template = env.get_template(source)
+        with open(target, 'w') as fp:
+            fp.write(template.render(context))
+
+    render.side_effect = jinja_render
+    config = mock_config.return_value = MockConfig(config_version=version)
+    mock_endpoint_from_flag.return_value.get_sandbox_image.return_value = "sandbox-image"
+    flags = {
+        'containerd.nvidia.available': False,
+    }
+    is_state.side_effect = lambda flag: flags[flag]
+    config['custom_registries'] = json.dumps([{
+        "url": "my.registry:port",
+        "username": "user",
+        "password": "pass"
+    }, {
+        "url": "my.other.registry",
+        "insecure_skip_verify": True
+    }])
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with patch('reactive.containerd.CONFIG_DIRECTORY', tmp_dir):
+            containerd.config_changed()
+        expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / (version + "_config.toml")
+        target = pathlib.Path(tmp_dir) / "config.toml"
+        assert list(target.open()) == list(expected.open())
 
 
 def test_juju_proxy_changed():

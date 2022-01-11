@@ -536,6 +536,10 @@ def gpu_config_changed():
     remove_state('containerd.nvidia.checked')
 
 
+CONFIG_DIRECTORY = '/etc/containerd'
+CONFIG_FILE = 'config.toml'
+
+
 @when('config.changed')
 @when_not('endpoint.containerd.departed')
 def config_changed():
@@ -554,9 +558,6 @@ def config_changed():
     else:
         template_config = "config.toml"
 
-    config_file = 'config.toml'
-    config_directory = '/etc/containerd'
-
     endpoint = endpoint_from_flag('endpoint.containerd.available')
     if endpoint:
         sandbox_image = endpoint.get_sandbox_image()
@@ -568,8 +569,8 @@ def config_changed():
     else:
         context['sandbox_image'] = containerd.get_sandbox_image()
 
-    if not os.path.isdir(config_directory):
-        os.mkdir(config_directory)
+    if not os.path.isdir(CONFIG_DIRECTORY):
+        os.mkdir(CONFIG_DIRECTORY)
 
     # If custom_registries changed, make sure to remove old tls files.
     if config().changed('custom_registries'):
@@ -584,7 +585,7 @@ def config_changed():
         return
 
     context['custom_registries'] = \
-        merge_custom_registries(config_directory, context['custom_registries'],
+        merge_custom_registries(CONFIG_DIRECTORY, context['custom_registries'],
                                 old_custom_registries)
 
     untrusted = DB.get('untrusted')
@@ -607,7 +608,7 @@ def config_changed():
 
     render(
         template_config,
-        os.path.join(config_directory, config_file),
+        os.path.join(CONFIG_DIRECTORY, CONFIG_FILE),
         context
     )
 
