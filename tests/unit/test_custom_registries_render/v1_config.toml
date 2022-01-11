@@ -53,10 +53,11 @@ oom_score = 0
           endpoint = ["my.registry:port"]
         [plugins.cri.registry.mirrors."my.other.registry"]
           endpoint = ["my.other.registry"]
-      [plugins.cri.registry.configs]
-        [plugins.cri.registry.configs."my.registry:port".auth]
+      [plugins.cri.registry.auths]
+        [plugins.cri.registry.auths."my.registry:port"]
           username = "user"
           password = "pass"
+      [plugins.cri.registry.configs]
         [plugins.cri.registry.configs."my.other.registry".tls]
           ca_file   = ""
           cert_file = ""

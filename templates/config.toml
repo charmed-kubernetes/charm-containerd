@@ -58,7 +58,7 @@ oom_score = 0
       conf_template = ""
     [plugins.cri.registry]
       [plugins.cri.registry.mirrors]
-      {%- if custom_registries %}
+    {%- if custom_registries %}
       {%- for registry in custom_registries %}
         {%- if registry.host %}
         [plugins.cri.registry.mirrors."{{ registry.host }}"]
@@ -66,15 +66,16 @@ oom_score = 0
           endpoint = ["{{ registry.url}}"]
           {%- endif -%}
         {% endif -%}
-      {% endfor%}
-      [plugins.cri.registry.configs]
+      {% endfor %}
+      [plugins.cri.registry.auths]
       {%- for registry in custom_registries %}
         {%- if registry.username and registry.password %}
-        [plugins.cri.registry.configs."{{ registry.url }}".auth]
+        [plugins.cri.registry.auths."{{ registry.url }}"]
           username = "{{ registry.username }}"
           password = "{{ registry.password }}"
         {%- endif -%}
-      {% endfor -%}
+      {% endfor %}
+      [plugins.cri.registry.configs]
       {%- for registry in custom_registries %}
         {%- if registry.ca or registry.cert or registry.key or registry.insecure_skip_verify %}
         [plugins.cri.registry.configs."{{ registry.url }}".tls]
@@ -84,7 +85,7 @@ oom_score = 0
           insecure_skip_verify = {{ "true" if registry.insecure_skip_verify else "false" }}
         {%- endif -%}
       {% endfor -%}
-      {%- endif %}
+    {%- endif %}
     [plugins.cri.x509_key_pair_streaming]
       tls_cert_file = ""
       tls_key_file = ""

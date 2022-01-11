@@ -64,7 +64,7 @@ async def juju_config(ops_test):
 
 @pytest.fixture(scope="module", params=["v1", "v2"])
 async def config_version(request, juju_config):
-    """Set the containerd config_version based on a parameter to run the same tests various ways."""
+    """Set the containerd config_version based on a parameter."""
     await juju_config('containerd', config_version=request.param)
     return request.param
 
