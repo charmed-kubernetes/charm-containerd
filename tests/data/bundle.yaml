@@ -11,7 +11,7 @@ machines:
     series: {{ series }}
 applications:
   containerd:
-    charm: {{ master_charm }}
+    charm: {{ charm }}
   docker-registry:
     charm: cs:~containers/docker-registry
     channel: edge
@@ -35,7 +35,7 @@ applications:
   flannel:
     charm: cs:~containers/flannel
     channel: edge
-  kubernetes-master:
+  kubernetes-control-plane:
     charm: cs:~containers/kubernetes-master
     channel: edge
     constraints: cores=4 mem=4G root-disk=16G
@@ -57,13 +57,13 @@ applications:
     - '1'
 
 relations:
-- - kubernetes-master:kube-api-endpoint
+- - kubernetes-control-plane:kube-api-endpoint
   - kubernetes-worker:kube-api-endpoint
-- - kubernetes-master:kube-control
+- - kubernetes-control-plane:kube-control
   - kubernetes-worker:kube-control
-- - kubernetes-master:certificates
+- - kubernetes-control-plane:certificates
   - easyrsa:client
-- - kubernetes-master:etcd
+- - kubernetes-control-plane:etcd
   - etcd:db
 - - kubernetes-worker:certificates
   - easyrsa:client
@@ -72,13 +72,13 @@ relations:
 - - flannel:etcd
   - etcd:db
 - - flannel:cni
-  - kubernetes-master:cni
+  - kubernetes-control-plane:cni
 - - flannel:cni
   - kubernetes-worker:cni
 - - containerd:containerd
   - kubernetes-worker:container-runtime
 - - containerd:containerd
-  - kubernetes-master:container-runtime
+  - kubernetes-control-plane:container-runtime
 - - docker-registry:docker-registry
   - containerd:docker-registry
 - - docker-registry:cert-provider
