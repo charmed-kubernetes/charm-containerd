@@ -11,7 +11,7 @@ async def test_build_and_deploy(ops_test):
     """Build and deploy Containerd in bundle."""
     bundle = ops_test.render_bundle(
         "tests/data/bundle.yaml",
-        master_charm=await ops_test.build_charm("."),
+        charm=await ops_test.build_charm("."),
         series="focal",
     )
     # Use CLI to deploy bundle until https://github.com/juju/python-libjuju/pull/497
@@ -22,7 +22,7 @@ async def test_build_and_deploy(ops_test):
     )
     assert retcode == 0, "Bundle deploy failed: {}".format((stderr or stdout).strip())
     await ops_test.model.wait_for_idle(timeout=60 * 60)
-    # note (rgildein): We don't care if kubernetes master will be ready,
+    # note (rgildein): We don't care if kubernetes-control-plane will be ready,
     #                  due testing on LXD.
     #                  https://bugs.launchpad.net/charm-kubernetes-worker/+bug/1903566
     await ops_test.model.wait_for_idle(
