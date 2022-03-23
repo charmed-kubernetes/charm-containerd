@@ -27,11 +27,11 @@ def test_get_sandbox_image():
     assert containerd.get_sandbox_image() == '{}/{}'.format(upstream_registry, image_name)
 
     mock_rids.return_value = ['foo']
-    mock_remote.return_value = 'kubernetes-master'
+    mock_remote.return_value = 'kubernetes-control-plane'
     assert containerd.get_sandbox_image() == '{}/{}'.format(canonical_registry, image_name)
 
     # No registry with k8s in our goal-state: return the canonical image
-    goal.return_value = {'relations': {'containerd': {'kubernetes-master'}}}
+    goal.return_value = {'relations': {'containerd': {'kubernetes-control-plane'}}}
     goal.side_effect = None
     assert containerd.get_sandbox_image() == '{}/{}'.format(canonical_registry, image_name)
 

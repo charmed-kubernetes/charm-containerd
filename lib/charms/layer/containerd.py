@@ -29,7 +29,7 @@ def get_sandbox_image():
         else:
             relations = deployment.get('relations', {}).get('containerd', {})
 
-        if any(k in relations for k in ('kubernetes-master', 'kubernetes-worker')):
+        if any(k in relations for k in ('kubernetes-control-plane', 'kubernetes-master', 'kubernetes-worker')):
             sandbox_registry = canonical_registry
         else:
             sandbox_registry = upstream_registry
