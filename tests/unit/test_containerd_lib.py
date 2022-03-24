@@ -1,5 +1,4 @@
 from charmhelpers.core.unitdata import kv
-from charmhelpers.core.host import arch
 from charmhelpers.core.hookenv import (
     goal_state as goal,
     relation_ids as mock_rids,
@@ -11,8 +10,7 @@ from charms.layer import containerd
 
 def test_get_sandbox_image():
     """Verify we return a sandbox image from the appropriate registry."""
-    arch.return_value = 'foo'
-    image_name = 'pause-{}:3.4.1'.format(arch.return_value)
+    image_name = 'pause:3.6'
 
     canonical_registry = 'rocks.canonical.com:443/cdk'
     related_registry = 'my.registry.com:5000'
