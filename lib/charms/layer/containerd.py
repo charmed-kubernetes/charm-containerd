@@ -29,6 +29,7 @@ def get_sandbox_image():
         else:
             relations = deployment.get('relations', {}).get('containerd', {})
 
+        # wokeignore:rule=master maintains backward compatability with kubernetes-master
         if any(k in relations for k in ('kubernetes-control-plane', 'kubernetes-master', 'kubernetes-worker')):
             sandbox_registry = canonical_registry
         else:
