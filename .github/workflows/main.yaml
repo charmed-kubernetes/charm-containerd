@@ -1,8 +1,26 @@
 name: Run tests with Tox
 
-on: [push]
+on: 
+  push: 
+    branch:
+      - main
+  pull_request:
+    branch: 
+      - main
 
 jobs:
+  Inclusive-naming-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+      - name: woke
+        uses: canonical-web-and-design/inclusive-naming@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-check
+          fail-on-error: true
+
   unit-tests:
     name: Lint, Unit Tests
     runs-on: ubuntu-latest
