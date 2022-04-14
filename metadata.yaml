@@ -7,6 +7,7 @@ description: |
   host system, from image transfer and storage to container
   execution and supervision to low-level storage to network
   attachments and beyond.
+docs: https://discourse.charmhub.io/t/containerd-docs-index/6169
 tags:
   - containers
 series:
