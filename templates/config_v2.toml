@@ -36,6 +36,9 @@ version = 2
     enable_tls_streaming = false
     max_container_log_line_size = 16384
     [plugins."io.containerd.grpc.v1.cri".containerd]
+    {%- if runtime.lower() != "runc" %}
+      default_runtime_name = "{{ runtime }}"
+    {% endif %}
       no_pivot = false
 	  {%- if untrusted %}
       [plugins."io.containerd.grpc.v1.cri".containerd.untrusted_workload_runtime]
@@ -51,6 +54,17 @@ version = 2
             Runtime = "{{ untrusted_binary }}"
             RuntimeRoot = "{{ untrusted_path }}"
 		{% endif %}
+    {%- if "nvidia" in runtime %}
+      # from https://github.com/NVIDIA/k8s-device-plugin#configure-containerd
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.{{ runtime }}]
+          privileged_without_host_devices = false
+          runtime_engine = ""
+          runtime_root = ""
+          runtime_type = "io.containerd.runc.v2"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.{{ runtime }}.options]
+            BinaryName = "/usr/bin/{{ runtime }}"
+    {% endif %}
     [plugins."io.containerd.grpc.v1.cri".cni]
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"

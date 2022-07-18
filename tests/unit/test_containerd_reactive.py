@@ -126,7 +126,7 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version)
             fp.write(template.render(context))
 
     render.side_effect = jinja_render
-    config = mock_config.return_value = MockConfig(config_version=version)
+    config = mock_config.return_value = MockConfig(config_version=version, runtime="auto")
     mock_endpoint_from_flag.return_value.get_sandbox_image.return_value = "sandbox-image"
     flags = {
         'containerd.nvidia.available': False,
