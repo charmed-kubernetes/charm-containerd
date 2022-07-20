@@ -1,8 +1,8 @@
+import contextlib
 import os
 import base64
 import binascii
 import json
-import requests
 import traceback
 
 from subprocess import (
@@ -10,6 +10,9 @@ from subprocess import (
     check_output,
     CalledProcessError
 )
+from typing import List, Optional
+import urllib.request
+import urllib.error
 
 from charms.reactive import (
     hook,
@@ -39,6 +42,7 @@ from charmhelpers.core.templating import render
 from charmhelpers.core.hookenv import (
     atexit,
     config,
+    env_proxy_settings,
     log,
     application_version_set
 )
@@ -54,6 +58,47 @@ from charmhelpers.fetch import (
     apt_unhold,
     import_key
 )
+
+
+@contextlib.contextmanager
+def proxy_env():
+    """Create a context to temporarily modify proxy in os.environ."""
+    restore = {**os.environ}           # Copy the current os.environ
+    # overwrite JUJU_CHARM_*_PROXY from config where available
+    for key in ["http_proxy", "https_proxy", "no_proxy"]:
+        val = config(key)
+        if val:
+            os.environ[f"JUJU_CHARM_{key.upper()}"] = val
+    juju_proxies = env_proxy_settings() or {}
+    os.environ.update(**juju_proxies)  # Insert or Update the os.environ
+    yield os.environ
+    for key in juju_proxies:
+        del os.environ[key]  # remove any keys which were added or updated
+    os.environ.update(**restore)  # restore any original values
+
+
+def fetch_url_text(urls) -> List[Optional[str]]:
+    """Fetch url text within a proxied environment.
+
+    returns: None in the event the url yielded no response.
+    """
+    # updates os.environ to include juju proxy settings
+    with proxy_env():
+        handlers = [urllib.request.ProxyHandler()]
+        opener = urllib.request.build_opener(*handlers)
+        responses = []
+        for url in urls:
+            resp = None
+            try:
+                resp = opener.open(url).read().decode()
+            except urllib.error.HTTPError as e:
+                log(f"Cannot fetch url='{url}' with code {e.code} {e.reason}")
+            except urllib.error.URLError as e:
+                log(f"Cannot fetch url='{url}' with {e.reason}")
+            finally:
+                responses.append(resp)
+
+    return responses
 
 
 DB = unitdata.kv()
@@ -457,19 +502,23 @@ def configure_nvidia():
     os_release_id = dist['DISTRIB_ID'].lower()
     os_release_version_id = dist['DISTRIB_RELEASE']
     os_release_version_id_no_dot = os_release_version_id.replace('.', '')
-    proxies = {
-        "http": config('http_proxy'),
-        "https": config('https_proxy')
-    }
+
     key_urls = config('nvidia_apt_key_urls').split()
-    for key_url in key_urls:
-        formatted_key_url = key_url.format(
+    formatted_key_urls = [
+        key_url.format(
             id=os_release_id,
             version_id=os_release_version_id,
             version_id_no_dot=os_release_version_id_no_dot
-        )
-        gpg_key = requests.get(formatted_key_url, proxies=proxies).text
-        import_key(gpg_key)
+        ) for key_url in key_urls
+    ]
+    if formatted_key_urls:
+        fetched_keys = fetch_url_text(formatted_key_urls)
+        if not all(fetched_keys):
+            status.blocked("Failed to fetch nvidia_apt_key_urls.")
+            return
+
+        for key in fetched_keys:
+            import_key(key)
 
     sources = config('nvidia_apt_sources').splitlines()
     formatted_sources = [
