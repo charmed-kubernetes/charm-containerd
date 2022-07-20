@@ -19,40 +19,50 @@ import jinja2
 def test_series_upgrade():
     """Verify series upgrade hook sets the status."""
     flags = {
-        'upgrade.series.in-progress': True,
-        'containerd.nvidia.invalid-option': False,
+        "upgrade.series.in-progress": True,
+        "containerd.nvidia.invalid-option": False,
     }
     is_state.side_effect = lambda flag: flags[flag]
     assert containerd.status.blocked.call_count == 0
-    with mock.patch('reactive.containerd._check_containerd', return_value=False):
+    with mock.patch("reactive.containerd._check_containerd", return_value=False):
         containerd.charm_status()
-    containerd.status.blocked.assert_called_once_with('Series upgrade in progress')
+    containerd.status.blocked.assert_called_once_with("Series upgrade in progress")
 
 
-@pytest.mark.parametrize('registry_errors', [
-    ('', 'Failed to decode json string'),
-    ('{}', "custom_registries is not a list"),
-    ('[1]', "registry #0 is not in object form"),
-    ('[{}]', "registry #0 missing required field url"),
-    ('[{"url": 1}]', "registry #0 field url=1 is not a string"),
-    (
-        '[{"url": "", "insecure_skip_verify": "FALSE"}]',
-        "registry #0 field insecure_skip_verify='FALSE' is not a boolean"
-    ),
-    ('[{"url": "", "why-am-i-here": "abc"}]', "registry #0 field why-am-i-here may not be specified"),
-    ('[{"url": "https://docker.io"}, {"url": "https://docker.io"}]', "registry #1 defines docker.io more than once"),
-    ('[]', None),
-], ids=[
-    'Invalid JSON',
-    'Not a List',
-    'List Item not an object',
-    'Missing required field',
-    'Non-stringly typed field',
-    'Accidentally truthy',
-    "Restricted field",
-    "Duplicate host",
-    "No errors"
-])
+@pytest.mark.parametrize(
+    "registry_errors",
+    [
+        ("", "Failed to decode json string"),
+        ("{}", "custom_registries is not a list"),
+        ("[1]", "registry #0 is not in object form"),
+        ("[{}]", "registry #0 missing required field url"),
+        ('[{"url": 1}]', "registry #0 field url=1 is not a string"),
+        (
+            '[{"url": "", "insecure_skip_verify": "FALSE"}]',
+            "registry #0 field insecure_skip_verify='FALSE' is not a boolean",
+        ),
+        (
+            '[{"url": "", "why-am-i-here": "abc"}]',
+            "registry #0 field why-am-i-here may not be specified",
+        ),
+        (
+            '[{"url": "https://docker.io"}, {"url": "https://docker.io"}]',
+            "registry #1 defines docker.io more than once",
+        ),
+        ("[]", None),
+    ],
+    ids=[
+        "Invalid JSON",
+        "Not a List",
+        "List Item not an object",
+        "Missing required field",
+        "Non-stringly typed field",
+        "Accidentally truthy",
+        "Restricted field",
+        "Duplicate host",
+        "No errors",
+    ],
+)
 def test_invalid_custom_registries(registry_errors):
     """Verify error status for invalid custom registries configurations."""
     registries, error = registry_errors
@@ -61,34 +71,33 @@ def test_invalid_custom_registries(registry_errors):
 
 def test_registries_list():
     """Verify _registries_list resolves json to a list of objects, or returns default."""
-    assert containerd._registries_list('[]') == []
-    assert containerd._registries_list('[{}]') == [{}]
+    assert containerd._registries_list("[]") == []
+    assert containerd._registries_list("[{}]") == [{}]
 
     default = []
-    assert containerd._registries_list('[{]', default) is default, "return default when invalid json"
-    assert containerd._registries_list('{}', default) is default, "return default when valid json isn't a list"
+    assert containerd._registries_list("[{]", default) is default, "return default when invalid json"
+    assert containerd._registries_list("{}", default) is default, "return default when valid json isn't a list"
 
     with pytest.raises(json.JSONDecodeError) as ie:
-        containerd._registries_list('[{]')
+        containerd._registries_list("[{]")
 
     with pytest.raises(containerd.InvalidCustomRegistriesError) as ie:
-        containerd._registries_list('{}')
+        containerd._registries_list("{}")
     assert "'{}' is not a list" == str(ie.value)
 
 
 def test_merge_custom_registries():
     """Verify merges of registries."""
     with tempfile.TemporaryDirectory() as dir:
-        config = [{
-            "url": "my.registry:port",
-            "username": "user",
-            "password": "pass"
-        }, {
-            "url": "my.other.registry",
-            "ca_file": "aGVsbG8gd29ybGQgY2EtZmlsZQ==",
-            "key_file": "aGVsbG8gd29ybGQga2V5LWZpbGU=",
-            "cert_file": "abc"  # invalid base64 is ignored
-        }]
+        config = [
+            {"url": "my.registry:port", "username": "user", "password": "pass"},
+            {
+                "url": "my.other.registry",
+                "ca_file": "aGVsbG8gd29ybGQgY2EtZmlsZQ==",
+                "key_file": "aGVsbG8gd29ybGQga2V5LWZpbGU=",
+                "cert_file": "abc",  # invalid base64 is ignored
+            },
+        ]
         ctxs = containerd.merge_custom_registries(dir, json.dumps(config), None)
         with open(os.path.join(dir, "my.other.registry.ca")) as f:
             assert f.read() == "hello world ca-file"
@@ -97,14 +106,10 @@ def test_merge_custom_registries():
         assert not os.path.exists(os.path.join(dir, "my.other.registry.cert"))
 
         for ctx in ctxs:
-            assert 'url' in ctx
+            assert "url" in ctx
 
         # Remove 'my.other.registry' from config
-        new_config = [{
-            "url": "my.registry:port",
-            "username": "user",
-            "password": "pass"
-        }]
+        new_config = [{"url": "my.registry:port", "username": "user", "password": "pass"}]
         ctxs = containerd.merge_custom_registries(dir, json.dumps(new_config), json.dumps(config))
         assert not os.path.exists(os.path.join(dir, "my.other.registry.ca"))
         assert not os.path.exists(os.path.join(dir, "my.other.registry.key"))
@@ -112,40 +117,37 @@ def test_merge_custom_registries():
 
 
 @pytest.mark.parametrize("version", ("v1", "v2"))
-@mock.patch('reactive.containerd.endpoint_from_flag')
-@mock.patch('reactive.containerd.config')
+@mock.patch("reactive.containerd.endpoint_from_flag")
+@mock.patch("reactive.containerd.config")
 def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version):
     """Verify exact rendering of config.toml files in both v1 and v2 formats."""
+
     class MockConfig(dict):
         def changed(self, *_args, **_kwargs):
             return False
 
     def jinja_render(source, target, context):
-        env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader('templates')
-        )
+        env = jinja2.Environment(loader=jinja2.FileSystemLoader("templates"))
         template = env.get_template(source)
-        with open(target, 'w') as fp:
+        with open(target, "w") as fp:
             fp.write(template.render(context))
 
     render.side_effect = jinja_render
     config = mock_config.return_value = MockConfig(config_version=version)
     mock_endpoint_from_flag.return_value.get_sandbox_image.return_value = "sandbox-image"
     flags = {
-        'containerd.nvidia.available': False,
+        "containerd.nvidia.available": False,
     }
     is_state.side_effect = lambda flag: flags[flag]
-    config['custom_registries'] = json.dumps([{
-        "url": "my.registry:port",
-        "username": "user",
-        "password": "pass"
-    }, {
-        "url": "my.other.registry",
-        "insecure_skip_verify": True
-    }])
+    config["custom_registries"] = json.dumps(
+        [
+            {"url": "my.registry:port", "username": "user", "password": "pass"},
+            {"url": "my.other.registry", "insecure_skip_verify": True},
+        ]
+    )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        with mock.patch('reactive.containerd.CONFIG_DIRECTORY', tmp_dir):
+        with mock.patch("reactive.containerd.CONFIG_DIRECTORY", tmp_dir):
             containerd.config_changed()
         expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / (version + "_config.toml")
         target = pathlib.Path(tmp_dir) / "config.toml"
@@ -154,20 +156,20 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version)
 
 def test_juju_proxy_changed():
     """Verify proxy changed bools are set as expected."""
-    cached = {'http_proxy': 'foo', 'https_proxy': 'foo', 'no_proxy': 'foo'}
-    new = {'http_proxy': 'bar', 'https_proxy': 'bar', 'no_proxy': 'bar'}
+    cached = {"http_proxy": "foo", "https_proxy": "foo", "no_proxy": "foo"}
+    new = {"http_proxy": "bar", "https_proxy": "bar", "no_proxy": "bar"}
 
     # Test when nothing is cached
     db = unitdata.kv()
     assert containerd._juju_proxy_changed() is True
 
     # Test when cache hasn't changed
-    db.set('config-cache', cached)
-    with mock.patch('reactive.containerd.check_for_juju_https_proxy', return_value=cached):
+    db.set("config-cache", cached)
+    with mock.patch("reactive.containerd.check_for_juju_https_proxy", return_value=cached):
         assert containerd._juju_proxy_changed() is False
 
     # Test when cache has changed
-    with mock.patch('reactive.containerd.check_for_juju_https_proxy', return_value=new):
+    with mock.patch("reactive.containerd.check_for_juju_https_proxy", return_value=new):
         assert containerd._juju_proxy_changed() is True
 
 
@@ -175,11 +177,8 @@ def test_juju_proxy_changed():
 def default_config():
     """Mock out the config method from the charm default config."""
     config_yaml = yaml.safe_load(pathlib.Path("config.yaml").read_bytes())
-    values = {
-        key: obj.get("default")
-        for key, obj in config_yaml["options"].items()
-    }
-    with mock.patch.object(containerd, 'config', side_effect=values.get) as obj:
+    values = {key: obj.get("default") for key, obj in config_yaml["options"].items()}
+    with mock.patch.object(containerd, "config", side_effect=values.get) as obj:
         yield obj
 
 
@@ -189,6 +188,7 @@ def default_config():
 @pytest.mark.parametrize("success", [True, False])
 def test_fetch_url_text(log, env_proxy_settings, success):
     """Test the fetch url method for success and failures."""
+
     def _responder(*_args):
         if success:
             return response
@@ -213,32 +213,33 @@ def test_fetch_url_text(log, env_proxy_settings, success):
         log.assert_called_once_with(f"Cannot fetch url='{the_url}' with code 404 Not Found")
 
 
-@mock.patch.object(containerd, 'config_changed')
-@mock.patch.object(containerd, 'fetch_url_text', return_value=["-key1-", "-key2-"])
-@mock.patch('builtins.open')
+@mock.patch.object(containerd, "config_changed")
+@mock.patch.object(containerd, "fetch_url_text", return_value=["-key1-", "-key2-"])
+@mock.patch("builtins.open")
 @pytest.mark.usefixtures("default_config")
 def test_configure_nvidia(mock_open, fetch_url_text, mock_config_changed):
     """Verify nvidia apt sources are configured."""
-    mock_lsb_release = dict(
-        DISTRIB_ID="ubuntu",
-        DISTRIB_RELEASE="20.04"
-    )
+    mock_lsb_release = dict(DISTRIB_ID="ubuntu", DISTRIB_RELEASE="20.04")
     import_key.reset_mock()
-    with mock.patch.object(host, 'lsb_release', return_value=mock_lsb_release):
+    with mock.patch.object(host, "lsb_release", return_value=mock_lsb_release):
         containerd.configure_nvidia()
 
     # keys should be fetched from formatted urls
-    fetch_url_text.assert_called_with([
-        "https://nvidia.github.io/nvidia-container-runtime/gpgkey",
-        "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub"
-    ])
+    fetch_url_text.assert_called_with(
+        [
+            "https://nvidia.github.io/nvidia-container-runtime/gpgkey",
+            "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub",
+        ]
+    )
 
     # import_key should be called twice with two key responses
     assert import_key.call_count == 2
-    import_key.assert_has_calls([
-        mock.call("-key1-"),
-        mock.call("-key2-"),
-    ])
+    import_key.assert_has_calls(
+        [
+            mock.call("-key1-"),
+            mock.call("-key2-"),
+        ]
+    )
 
     # sources file should be written out
     mock_open.assert_called_once_with("/etc/apt/sources.list.d/nvidia.list", "w")
