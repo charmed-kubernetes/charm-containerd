@@ -1,6 +1,8 @@
 import logging
-
+import shlex
+from pathlib import Path
 import pytest
+import yaml
 import toml
 
 log = logging.getLogger(__name__)
@@ -9,25 +11,31 @@ log = logging.getLogger(__name__)
 @pytest.mark.abort_on_fail
 async def test_build_and_deploy(ops_test):
     """Build and deploy Containerd in bundle."""
-    bundle = ops_test.render_bundle(
-        "tests/data/bundle.yaml",
-        charm=await ops_test.build_charm("."),
-        series="focal",
-    )
-    # Use CLI to deploy bundle until https://github.com/juju/python-libjuju/pull/497
-    # is released.
-    # await ops_test.model.deploy(bundle)
-    retcode, stdout, stderr = await ops_test._run(
-        "juju", "deploy", "-m", ops_test.model_full_name, bundle
-    )
-    assert retcode == 0, "Bundle deploy failed: {}".format((stderr or stdout).strip())
-    await ops_test.model.wait_for_idle(timeout=60 * 60)
-    # note (rgildein): We don't care if kubernetes-control-plane will be ready,
-    #                  due testing on LXD.
-    #                  https://bugs.launchpad.net/charm-kubernetes-worker/+bug/1903566
+    log.info("Build Charm...")
+    charm = await ops_test.build_charm(".")
+
+    overlays = [
+        ops_test.Bundle("kubernetes-core", channel="edge"),
+        Path("tests/data/charm.yaml"),
+    ]
+
+    log.info("Build Bundle...")
+    bundle, *overlays = await ops_test.async_render_bundles(*overlays, charm=charm)
+
+    log.info("Deploy Bundle...")
+    model = ops_test.model_full_name
+    cmd = f"juju deploy -m {model} {bundle} "
+    cmd += " ".join(f"--overlay={f}" for f in overlays)
+    rc, stdout, stderr = await ops_test.run(*shlex.split(cmd))
+    assert rc == 0, f"Bundle deploy failed: {(stderr or stdout).strip()}"
+
+    apps = [
+        app
+        for fragment in (bundle, *overlays)
+        for app in yaml.safe_load(fragment.open())["applications"]
+    ]
     await ops_test.model.wait_for_idle(
-        apps=["containerd", "flannel", "easyrsa", "etcd", "kubernetes-worker", "docker-registry"],
-        wait_for_active=True,
+        apps=apps, wait_for_active=True, timeout=60 * 60
     )
 
 

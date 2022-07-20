@@ -1,0 +1,9 @@
+
+apt-http-proxy: http://squid.internal:3128
+apt-https-proxy: http://squid.internal:3128
+apt-no-proxy: localhost,127.0.0.1,ppa.launchpad.net,launchpad.net
+juju-http-proxy: http://squid.internal:3128
+juju-https-proxy: http://squid.internal:3128
+juju-no-proxy: localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.0.8.0/24,10.246.153.0/24
+snap-http-proxy: http://squid.internal:3128
+snap-https-proxy: http://squid.internal:3128
