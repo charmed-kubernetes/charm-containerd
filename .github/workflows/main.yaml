@@ -1,15 +1,12 @@
 name: Run tests with Tox
 
 on: 
-  push: 
-    branch:
-      - main
   pull_request:
     branch: 
       - main
 
 jobs:
-  Inclusive-naming-check:
+  inclusive-naming-check:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -21,7 +18,7 @@ jobs:
           reporter: github-pr-check
           fail-on-error: true
 
-  unit-tests:
+  lint-unit:
     name: Lint, Unit Tests
     runs-on: ubuntu-latest
     strategy:
@@ -39,8 +36,12 @@ jobs:
         run: tox # Run tox using the version of Python in `PATH`
 
   integration-tests:
-    name: Integration test with LXD
-    runs-on: ubuntu-latest
+    name: Integration test with VMWare
+    runs-on: self-hosted
+    needs:
+      - lint-unit
+      - inclusive-naming-check
+    timeout-minutes: 60
     steps:
       - name: Check out code
         uses: actions/checkout@v2
@@ -51,6 +52,9 @@ jobs:
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
         with:
-          provider: lxd
+          provider: vsphere
+          credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
+          clouds-yaml: ${{ secrets.CLOUDS_YAML }}
+          bootstrap-options: "--model-default datastore=vsanDatastore --model-default primary-network=VLAN_2764"
       - name: Run integration test
         run: tox -e integration

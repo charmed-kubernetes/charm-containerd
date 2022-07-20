@@ -22,7 +22,6 @@ async def test_build_and_deploy(ops_test):
     log.info("Build Bundle...")
     bundle, *overlays = await ops_test.async_render_bundles(*overlays, charm=charm)
 
-
     log.info("Deploy Bundle...")
     model = ops_test.model_full_name
     cmd = f"juju deploy -m {model} {bundle} "
