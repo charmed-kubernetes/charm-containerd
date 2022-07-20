@@ -15,15 +15,13 @@ jobs:
   lint-unit:
     name: Lint Unit
     uses: charmed-kubernetes/workflows/.github/workflows/lint-unit.yaml@main
-    needs:
-      - call-inclusive-naming-check
 
   integration-tests:
-    name: Integration test with LXD
-    runs-on: ubuntu-latest
+    name: Integration test with VMWare
+    runs-on: self-hosted
     needs:
       - lint-unit
-      - inclusive-naming-check
+      - call-inclusive-naming-check
     timeout-minutes: 60
     steps:
       - name: Check out code
