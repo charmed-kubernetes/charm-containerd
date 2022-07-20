@@ -1,0 +1,14 @@
+description: Overlay for attaching current charm
+applications:
+  containerd:
+    charm: {{charm}}
+    channel: null
+  docker-registry:
+    charm: docker-registry
+    channel: edge
+    num_units: 1
+relations:
+- - docker-registry:docker-registry
+  - containerd:docker-registry
+- - docker-registry:cert-provider
+  - easyrsa:client

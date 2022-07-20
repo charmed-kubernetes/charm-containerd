@@ -1,9 +1,6 @@
 name: Run tests with Tox
 
 on: 
-  push: 
-    branch:
-      - main
   pull_request:
     branch: 
       - main
@@ -26,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - lint-unit
+      - inclusive-naming-check
+    timeout-minutes: 60
     steps:
       - name: Check out code
         uses: actions/checkout@v2
@@ -36,6 +35,25 @@ jobs:
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
         with:
-          provider: lxd
+          provider: vsphere
+          credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
+          clouds-yaml: ${{ secrets.CLOUDS_YAML }}
+          bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
+          bootstrap-options: "${{ secrets.FOCAL_BOOTSTRAP_OPTIONS }} --model-default datastore=vsanDatastore --model-default primary-network=VLAN_2763"
       - name: Run integration test
-        run: tox -e integration
+        run: tox -e integration -- --model-config=.github/data/proxy_config.yaml
+      - name: Setup Debug Artifact Collection
+        if: ${{ failure() }}
+        run: mkdir tmp
+      - name: Collect Juju Status
+        if: ${{ failure() }}
+        run: |
+          juju status 2>&1 | tee tmp/juju-status.txt
+          juju-crashdump -s -m controller -a debug-layer -a config -o tmp/
+          mv juju-crashdump-* tmp/ | true
+      - name: Upload debug artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-run-artifacts
+          path: tmp
