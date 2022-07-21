@@ -2,6 +2,8 @@ import os
 import base64
 import binascii
 import json
+from pathlib import Path
+import shutil
 import requests
 import traceback
 
@@ -20,9 +22,8 @@ from charms.reactive import (
 
 from charms.layer import containerd, status
 from charms.layer.container_runtime_common import (
-    ca_crt_path,
-    server_crt_path,
-    server_key_path,
+    client_crt_path,
+    client_key_path,
     check_for_juju_https_proxy,
 )
 
@@ -133,18 +134,21 @@ def update_custom_tls_config(config_directory, registries, old_registries):
     :return: None
     """
     # Remove tls files of old registries; so not to leave uneeded, stale files.
+    certs_d = Path(CONFIG_DIRECTORY) / "certs.d"
     for registry in old_registries:
+        host = strip_url(registry["url"])
         for opt in ["ca", "key", "cert"]:
-            file_b64 = registry.get("%s_file" % opt)
-            if file_b64:
-                registry[opt] = os.path.join(config_directory, "%s.%s" % (strip_url(registry["url"]), opt))
-                if os.path.isfile(registry[opt]):
-                    os.remove(registry[opt])
+            file_path = Path(config_directory, f"{host}.{opt}")
+            file_path.unlink(missing_ok=True)
+        host_path = certs_d / host
+        host_path.is_dir() and shutil.rmtree(host_path)
 
     # Write tls files of new registries.
     for registry in registries:
+        host = strip_url(registry["url"])
         for opt in ["ca", "key", "cert"]:
             file_b64 = registry.get("%s_file" % opt)
+
             if file_b64:
                 try:
                     file_contents = base64.b64decode(file_b64)
@@ -152,9 +156,17 @@ def update_custom_tls_config(config_directory, registries, old_registries):
                     log(traceback.format_exc())
                     log("{}:{} didn't look like base64 data... skipping".format(registry["url"], opt))
                     continue
-                registry[opt] = os.path.join(config_directory, "%s.%s" % (strip_url(registry["url"]), opt))
-                with open(registry[opt], "wb") as f:
-                    f.write(file_contents)
+                file_path = Path(config_directory, f"{host}.{opt}")
+                file_path.write_bytes(file_contents)
+                registry[opt] = str(file_path)
+            else:
+                registry[opt] = ""
+
+        host_path = certs_d / host / "hosts.toml"
+        context = dict(**registry)
+        context[host] = host
+        host_path.parent.mkdir(parents=True, exist_ok=True)
+        render("hosts.toml", host_path, {"registry": context})
 
 
 def populate_host_for_custom_registries(custom_registries):
@@ -569,6 +581,8 @@ def config_changed():
     if not is_state("containerd.nvidia.available") and context.get("runtime") == "auto":
         context["runtime"] = "runc"
 
+    context["use_deprecated_mirror_config"] = True
+
     render(template_config, os.path.join(CONFIG_DIRECTORY, CONFIG_FILE), context)
 
     set_state("containerd.restart")
@@ -703,11 +717,12 @@ def configure_registry():
     # Handle TLS data.
     if registry.has_tls():
         # Ensure the CA that signed our registry cert is trusted.
-        host.install_ca_cert(registry.tls_ca, name="juju-docker-registry")
+        name = "juju-docker-registry"
+        host.install_ca_cert(registry.tls_ca, name=name)
 
-        docker_registry["ca"] = str(ca_crt_path)
-        docker_registry["key"] = str(server_key_path)
-        docker_registry["cert"] = str(server_crt_path)
+        docker_registry["ca"] = str(host.ca_cert_absolute_path(name))
+        docker_registry["key"] = str(client_key_path)
+        docker_registry["cert"] = str(client_crt_path)
 
     DB.set("registry", docker_registry)
 

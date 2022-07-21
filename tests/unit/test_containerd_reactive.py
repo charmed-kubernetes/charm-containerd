@@ -1,5 +1,4 @@
 import pathlib
-import os
 import json
 from unittest.mock import patch
 
@@ -7,7 +6,6 @@ from charmhelpers.core import unitdata
 from charmhelpers.core.templating import render
 from charms.reactive import is_state
 from reactive import containerd
-import tempfile
 import pytest
 
 import jinja2
@@ -83,40 +81,41 @@ def test_registries_list():
     assert "'{}' is not a list" == str(ie.value)
 
 
-def test_merge_custom_registries():
+def test_merge_custom_registries(tmp_path):
     """Verify merges of registries."""
-    with tempfile.TemporaryDirectory() as dir:
+    with patch.object(containerd, "CONFIG_DIRECTORY", str(tmp_path)):
         config = [
-            {"url": "my.registry:port", "username": "user", "password": "pass"},
+            {"url": "https://my.registry:port", "username": "user", "password": "pass"},
             {
-                "url": "my.other.registry",
+                "url": "https://my.other.registry",
                 "ca_file": "aGVsbG8gd29ybGQgY2EtZmlsZQ==",
                 "key_file": "aGVsbG8gd29ybGQga2V5LWZpbGU=",
                 "cert_file": "abc",  # invalid base64 is ignored
             },
         ]
-        ctxs = containerd.merge_custom_registries(dir, json.dumps(config), None)
-        with open(os.path.join(dir, "my.other.registry.ca")) as f:
-            assert f.read() == "hello world ca-file"
-        with open(os.path.join(dir, "my.other.registry.key")) as f:
-            assert f.read() == "hello world key-file"
-        assert not os.path.exists(os.path.join(dir, "my.other.registry.cert"))
+        ctxs = containerd.merge_custom_registries(tmp_path, json.dumps(config), None)
+        assert (tmp_path / "my.other.registry.ca").read_text() == "hello world ca-file"
+        assert (tmp_path / "my.other.registry.key").read_text() == "hello world key-file"
+        assert not (tmp_path / "my.other.registry.cert").exists()
+        assert containerd.render.call_count == 3
 
         for ctx in ctxs:
             assert "url" in ctx
 
         # Remove 'my.other.registry' from config
+        containerd.render.reset_mock()
         new_config = [{"url": "my.registry:port", "username": "user", "password": "pass"}]
-        ctxs = containerd.merge_custom_registries(dir, json.dumps(new_config), json.dumps(config))
-        assert not os.path.exists(os.path.join(dir, "my.other.registry.ca"))
-        assert not os.path.exists(os.path.join(dir, "my.other.registry.key"))
-        assert not os.path.exists(os.path.join(dir, "my.other.registry.cert"))
+        ctxs = containerd.merge_custom_registries(tmp_path, json.dumps(new_config), json.dumps(config))
+        assert not (tmp_path / "my.other.registry.ca").exists()
+        assert not (tmp_path / "my.other.registry.key").exists()
+        assert not (tmp_path / "my.other.registry.cert").exists()
+        assert containerd.render.call_count == 2
 
 
 @pytest.mark.parametrize("version", ("v1", "v2"))
 @patch("reactive.containerd.endpoint_from_flag")
 @patch("reactive.containerd.config")
-def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version):
+def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version, tmp_path):
     """Verify exact rendering of config.toml files in both v1 and v2 formats."""
 
     class MockConfig(dict):
@@ -142,13 +141,11 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version)
             {"url": "my.other.registry", "insecure_skip_verify": True},
         ]
     )
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        with patch("reactive.containerd.CONFIG_DIRECTORY", tmp_dir):
-            containerd.config_changed()
-        expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / (version + "_config.toml")
-        target = pathlib.Path(tmp_dir) / "config.toml"
-        assert list(target.open()) == list(expected.open())
+    with patch.object(containerd, "CONFIG_DIRECTORY", str(tmp_path)):
+        containerd.config_changed()
+    expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / (version + "_config.toml")
+    target = pathlib.Path(tmp_path) / "config.toml"
+    assert list(target.open()) == list(expected.open())
 
 
 def test_juju_proxy_changed():
