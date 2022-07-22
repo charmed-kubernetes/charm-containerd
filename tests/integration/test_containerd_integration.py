@@ -84,14 +84,34 @@ async def containerd_config(unit):
     return toml.loads(stdout)
 
 
+async def containerd_hosts(unit):
+    """Gather containerd hosts.toml and load each as a dict from its toml representation."""
+    output = await unit.run("ls /etc/containerd/certs.d/*/hosts.toml")
+    files = output.data["results"].get("Stdout")
+    assert files, "Containerd output was empty"
+
+    file_map = {}
+    for fname in files.splitlines():
+        output = await unit.run(f"cat {fname}")
+        host = fname.split("/")[-2]
+        file_map[host] = output.data["results"].get("Stdout")
+    return {f: toml.loads(content) for f, content in file_map.items()}
+
+
 async def test_containerd_registry_has_dockerio_mirror(config_version, ops_test):
     """Test gathering the list of registries."""
     plugin = "cri" if config_version == "v1" else "io.containerd.grpc.v1.cri"
     for unit in ops_test.model.applications["containerd"].units:
         config = await containerd_config(unit)
-        mirrors = config["plugins"][plugin]["registry"]["mirrors"]
-        assert "docker.io" in mirrors, "docker.io missing from containerd config"
-        assert mirrors["docker.io"]["endpoint"] == ["https://registry-1.docker.io"]
+        registry = config["plugins"][plugin]["registry"]
+        if config_version == "v1":
+            assert "docker.io" in registry["mirrors"], "docker.io missing from containerd config"
+            assert registry["mirrors"]["docker.io"]["endpoint"] == ["https://registry-1.docker.io"]
+        else:
+            assert registry["config_path"] == "/etc/containerd/certs.d"
+            hosts = await containerd_hosts(unit)
+            assert len(hosts) == 2, f"Wrong number of hosts.toml found in {hosts.keys()} on {unit.name}"
+            assert "docker.io" in hosts
 
 
 async def test_containerd_registry_with_private_registry(config_version, ops_test):
@@ -99,9 +119,17 @@ async def test_containerd_registry_with_private_registry(config_version, ops_tes
     registry_unit = ops_test.model.applications.get("docker-registry").units[0]
     plugin = "cri" if config_version == "v1" else "io.containerd.grpc.v1.cri"
     for unit in ops_test.model.applications["containerd"].units:
-        config = await containerd_config(unit)
-        configs = config["plugins"][plugin]["registry"]["configs"]
-        assert len(configs) == 1, "registry config isn't represented in config.toml"
-        docker_registry = next(iter(configs))
-        assert configs[docker_registry]["tls"], "TLS config isn't represented in the config.toml"
-        assert docker_registry in registry_unit.workload_status_message
+        hosts = await containerd_hosts(unit)
+        hosts.pop("docker.io")
+        hostname, host_toml = next(iter(hosts.items()))
+        mirror = next(iter(host_toml["host"].values()))
+        assert mirror["ca"], "TLS CA config isn't represented in the hosts.toml"
+        assert mirror["client"], "TLS Client config isn't represented in the hosts.toml"
+
+        if config_version == "v1":
+            config = await containerd_config(unit)
+            configs = config["plugins"][plugin]["registry"]["configs"]
+            assert len(configs) == 1, "registry config isn't represented in config.toml"
+            docker_registry = next(iter(configs))
+            assert configs[docker_registry]["tls"], "TLS config isn't represented in the v1 config.toml"
+            assert hostname in registry_unit.workload_status_message

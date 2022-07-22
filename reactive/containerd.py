@@ -134,21 +134,15 @@ def update_custom_tls_config(config_directory, registries, old_registries):
     :return: None
     """
     # Remove tls files of old registries; so not to leave uneeded, stale files.
-    certs_d = Path(CONFIG_DIRECTORY) / "certs.d"
     for registry in old_registries:
-        host = strip_url(registry["url"])
         for opt in ["ca", "key", "cert"]:
-            file_path = Path(config_directory, f"{host}.{opt}")
+            file_path = Path(config_directory, f"{strip_url(registry['url'])}.{opt}")
             file_path.unlink(missing_ok=True)
-        host_path = certs_d / host
-        host_path.is_dir() and shutil.rmtree(host_path)
 
     # Write tls files of new registries.
     for registry in registries:
-        host = strip_url(registry["url"])
         for opt in ["ca", "key", "cert"]:
             file_b64 = registry.get("%s_file" % opt)
-
             if file_b64:
                 try:
                     file_contents = base64.b64decode(file_b64)
@@ -156,17 +150,36 @@ def update_custom_tls_config(config_directory, registries, old_registries):
                     log(traceback.format_exc())
                     log("{}:{} didn't look like base64 data... skipping".format(registry["url"], opt))
                     continue
-                file_path = Path(config_directory, f"{host}.{opt}")
+                file_path = Path(config_directory, f"{strip_url(registry['url'])}.{opt}")
                 file_path.write_bytes(file_contents)
                 registry[opt] = str(file_path)
             else:
                 registry[opt] = ""
 
+
+def update_host_toml(config_directory, registries, old_registries):
+    """
+    Remove old/write new hosts files from/to disk.
+
+    :param str config_directory: containerd config directory
+    :param List registries: juju config for custom registries
+    :param List old_registries: old juju config for custom registries
+    """
+    certs_d = Path(config_directory) / "certs.d"
+    for registry in old_registries:
+        host = registry.get("host") or strip_url(registry["url"])
+        host_path = certs_d / host
+        host_path.is_dir() and shutil.rmtree(host_path)
+        log(f"Removed {host_path}")
+
+    for registry in registries:
+        host = registry.get("host") or strip_url(registry["url"])
         host_path = certs_d / host / "hosts.toml"
         context = dict(**registry)
-        context[host] = host
+        context["host"] = host
         host_path.parent.mkdir(parents=True, exist_ok=True)
         render("hosts.toml", host_path, {"registry": context})
+        log(f"Adding {host_path}")
 
 
 def populate_host_for_custom_registries(custom_registries):
@@ -253,6 +266,7 @@ def merge_custom_registries(config_directory, custom_registries, old_custom_regi
     if docker_registry:
         registries.append(docker_registry)
 
+    update_host_toml(config_directory, registries, old_registries)
     return registries
 
 
@@ -566,6 +580,15 @@ def config_changed():
         CONFIG_DIRECTORY, context["custom_registries"], old_custom_registries
     )
 
+    """
+    use the hosts.tomls in most cases, unless
+    a username or password are defined in any custom resgistry.
+    (only applies to v2 config version)
+    """
+    context["use_hosts_toml"] = not any(
+        registry.get(field) for registry in context["custom_registries"] for field in ("username", "password")
+    )
+
     untrusted = DB.get("untrusted")
     if untrusted:
         context["untrusted"] = True
@@ -580,8 +603,6 @@ def config_changed():
         context["runtime"] = "nvidia-container-runtime"
     if not is_state("containerd.nvidia.available") and context.get("runtime") == "auto":
         context["runtime"] = "runc"
-
-    context["use_deprecated_mirror_config"] = True
 
     render(template_config, os.path.join(CONFIG_DIRECTORY, CONFIG_FILE), context)
 
@@ -706,8 +727,12 @@ def configure_registry():
 
     docker_registry = {
         "host": strip_url(registry.registry_netloc),
-        "url": registry.registry_netloc,
     }
+
+    if registry.has_custom_url():
+        docker_registry["url"] = registry.registry_url
+    else:
+        docker_registry["url"] = registry.registry_netloc
 
     # Handle auth data.
     if registry.has_auth_basic():
@@ -767,6 +792,7 @@ def remove_registry():
         # Remove from DB.
         DB.unset("registry")
         DB.flush()
+        update_host_toml(CONFIG_DIRECTORY, [], [docker_registry])
 
         # Remove auth-related data.
         log("Disabling auth for docker registry: {}.".format(docker_registry["url"]))

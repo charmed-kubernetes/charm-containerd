@@ -97,7 +97,7 @@ def test_merge_custom_registries(tmp_path):
         assert (tmp_path / "my.other.registry.ca").read_text() == "hello world ca-file"
         assert (tmp_path / "my.other.registry.key").read_text() == "hello world key-file"
         assert not (tmp_path / "my.other.registry.cert").exists()
-        assert containerd.render.call_count == 3
+        assert containerd.render.call_count == 4
 
         for ctx in ctxs:
             assert "url" in ctx
@@ -109,7 +109,7 @@ def test_merge_custom_registries(tmp_path):
         assert not (tmp_path / "my.other.registry.ca").exists()
         assert not (tmp_path / "my.other.registry.key").exists()
         assert not (tmp_path / "my.other.registry.cert").exists()
-        assert containerd.render.call_count == 2
+        assert containerd.render.call_count == 3
 
 
 @pytest.mark.parametrize("version", ("v1", "v2"))

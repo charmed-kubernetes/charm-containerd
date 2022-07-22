@@ -65,7 +65,7 @@ version = 2
 		    {%- endif %}
 
     [plugins."io.containerd.grpc.v1.cri".registry]
-    {%- if use_deprecated_mirror_config %}
+    {%- if not use_hosts_toml %}
       [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
       {%- if custom_registries -%}
       {%- for registry in custom_registries -%}
