@@ -12,6 +12,7 @@ tags:
   - containers
 series:
   - focal
+  - jammy
   - bionic
 subordinate: true
 requires:
