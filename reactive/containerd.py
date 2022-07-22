@@ -137,7 +137,7 @@ def update_custom_tls_config(config_directory, registries, old_registries):
     for registry in old_registries:
         for opt in ["ca", "key", "cert"]:
             file_path = Path(config_directory, f"{strip_url(registry['url'])}.{opt}")
-            file_path.unlink(missing_ok=True)
+            file_path.exists() and file_path.unlink()
 
     # Write tls files of new registries.
     for registry in registries:
