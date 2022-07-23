@@ -1,2 +1,6 @@
 upgrade-containerd:
     description: Force upgrades Containerd to latest repository version
+    params:
+        dry-run:
+            type: boolean
+            description: Only run a dry-run upgrade and report the available version

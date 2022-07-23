@@ -49,6 +49,18 @@ async def test_upgrade_containerd_action(ops_test):
     assert output.data.get("results", {}).get("runtime") == "containerd"
 
 
+async def test_upgrade_containerd_dry_run_action(ops_test):
+    """Test running upgrade-containerd action."""
+    unit = ops_test.model.applications["containerd"].units[0]
+    action = await unit.run_action("upgrade-containerd", **{"dry-run": True})
+    output = await action.wait()  # wait for result
+    assert output.data.get("status") == "completed"
+    results = output.data.get("results", {})
+    log.info(f"Upgrade dry-run results = '{results}'")
+    assert results["available"] == results["installed"]
+    assert results["can-upgrade"] == "False"
+
+
 @pytest.fixture(scope="module")
 async def juju_config(ops_test):
     """Apply configuration for a test, then revert after the test is completed."""
