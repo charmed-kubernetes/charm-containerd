@@ -56,8 +56,9 @@ async def test_upgrade_containerd_dry_run_action(ops_test):
     output = await action.wait()  # wait for result
     assert output.data.get("status") == "completed"
     results = output.data.get("results", {})
+    log.info(f"Upgrade dry-run results = '{results}'")
     assert results["available"] == results["installed"]
-    assert not results["can-upgrade"]
+    assert results["can-upgrade"] == "False"
 
 
 @pytest.fixture(scope="module")
