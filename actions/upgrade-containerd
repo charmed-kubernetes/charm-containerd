@@ -2,15 +2,19 @@
 
 from charmhelpers.core.hookenv import (
     action_set,
+    action_get,
     action_fail
 )
 
 from charmhelpers.fetch import (
+    apt_cache,
+    apt_hold,
     apt_install,
     apt_update,
-    apt_hold,
-    apt_unhold
+    apt_unhold,
 )
+
+from charmhelpers.fetch.ubuntu_apt_pkg import PkgVersion
 
 from charmhelpers.core.host import service_restart
 
@@ -19,16 +23,32 @@ from charms.reactive import remove_state
 from reactive.containerd import CONTAINERD_PACKAGE
 
 
-def main():
-    """
-    Upgrade containerd to the latest in apt.
+def _dry_run():
+    """Determine if a new package is available."""
+    apt_update(fatal=True)
+    try:
+        pkg = apt_cache()[CONTAINERD_PACKAGE]
+    except KeyError:
+        action_fail(f"{CONTAINERD_PACKAGE} not installed")
+        return
 
-    :return: None
-    """
+    available, installed = map(PkgVersion, (pkg.get("version"), pkg.current_ver.get("ver_str")))
+
+    result = {
+        "available": available.version,
+        "installed": installed.version,
+        "can-upgrade": available > installed
+    }
+    action_set(result)
+    
+
+def _upgrade():
+    """Do actual upgrade."""
     try:
         apt_update(fatal=True)
         apt_unhold(CONTAINERD_PACKAGE)
         apt_install(CONTAINERD_PACKAGE, fatal=True)
+
         apt_hold(CONTAINERD_PACKAGE)
         service_restart(CONTAINERD_PACKAGE)
 
@@ -37,6 +57,15 @@ def main():
 
     except Exception as e:
         action_fail(e)
+
+
+
+def main():
+    """Upgrade containerd to the latest in apt."""
+    if action_get().get("dry-run"):
+        _dry_run()
+    else:
+        _upgrade()
 
 
 if __name__ == '__main__':
