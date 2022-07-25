@@ -63,6 +63,17 @@ version = 2
             Runtime = "{{ untrusted_binary }}"
             RuntimeRoot = "{{ untrusted_path }}"
 		    {%- endif %}
+        {%- if "nvidia" in runtime %}
+
+        # from https://github.com/NVIDIA/k8s-device-plugin#configure-containerd
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.{{ runtime }}]
+          privileged_without_host_devices = false
+          runtime_engine = ""
+          runtime_root = ""
+          runtime_type = "io.containerd.runc.v2"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.{{ runtime }}.options]
+            BinaryName = "/usr/bin/{{ runtime }}"
+        {%- endif %}
 
     [plugins."io.containerd.grpc.v1.cri".registry]
     {%- if not use_hosts_toml %}

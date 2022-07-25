@@ -113,9 +113,10 @@ def test_merge_custom_registries(tmp_path):
 
 
 @pytest.mark.parametrize("version", ("v1", "v2"))
+@pytest.mark.parametrize("gpu", ("off", "on"), ids=("gpu off", "gpu on"))
 @patch("reactive.containerd.endpoint_from_flag")
 @patch("reactive.containerd.config")
-def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version, tmp_path):
+def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, version, tmp_path):
     """Verify exact rendering of config.toml files in both v1 and v2 formats."""
 
     class MockConfig(dict):
@@ -129,10 +130,10 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version,
             fp.write(template.render(context))
 
     render.side_effect = jinja_render
-    config = mock_config.return_value = MockConfig(config_version=version)
+    config = mock_config.return_value = MockConfig(config_version=version, gpu_driver="auto", runtime="auto")
     mock_endpoint_from_flag.return_value.get_sandbox_image.return_value = "sandbox-image"
     flags = {
-        "containerd.nvidia.available": False,
+        "containerd.nvidia.available": gpu == "on",
     }
     is_state.side_effect = lambda flag: flags[flag]
     config["custom_registries"] = json.dumps(
@@ -143,7 +144,8 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, version,
     )
     with patch.object(containerd, "CONFIG_DIRECTORY", str(tmp_path)):
         containerd.config_changed()
-    expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / (version + "_config.toml")
+    f_name = f"nvidia-{gpu}-{version}-config.toml"
+    expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / f_name
     target = pathlib.Path(tmp_path) / "config.toml"
     assert list(target.open()) == list(expected.open())
 
