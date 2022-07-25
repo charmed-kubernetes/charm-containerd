@@ -564,10 +564,11 @@ def config_changed():
     else:
         context["untrusted"] = False
 
-    if is_state("containerd.nvidia.available") and context.get("runtime") == "auto":
-        context["runtime"] = "nvidia-container-runtime"
-    if not is_state("containerd.nvidia.available") and context.get("runtime") == "auto":
-        context["runtime"] = "runc"
+    if context.get("runtime") == "auto":
+        if is_state("containerd.nvidia.available"):
+            context["runtime"] = "nvidia-container-runtime"
+        else:
+            context["runtime"] = "runc"
 
     render(template_config, os.path.join(CONFIG_DIRECTORY, CONFIG_FILE), context)
 
