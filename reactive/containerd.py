@@ -60,6 +60,9 @@ def apt_packages(packages: Set[str]) -> Mapping[str, Package]:
     @returns: Map of available packages
     """
     result = {}
+    if not packages:
+        return result
+
     cache = apt_cache()
     # also search for any already installed packages matching
     wildcards = [_ + "*" for _ in packages]
@@ -561,8 +564,12 @@ def configure_nvidia(reconfigure=True):
         f.write("\n".join(formatted_sources))
 
     apt_update()
-    packages = config("nvidia_apt_packages").split()
-    apt_install(packages, fatal=True)
+    nvidia_packages = config("nvidia_apt_packages").split()
+    if not nvidia_packages:
+        status.blocked("No NVIDIA packages selected to install.")
+        return
+
+    apt_install(nvidia_packages, fatal=True)
 
     set_state("containerd.nvidia.ready")
     if reconfigure:
