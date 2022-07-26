@@ -57,8 +57,8 @@ async def test_upgrade_containerd_dry_run_action(ops_test):
     assert output.data.get("status") == "completed"
     results = output.data.get("results", {})
     log.info(f"Upgrade dry-run results = '{results}'")
-    assert results["available"] == results["installed"]
-    assert results["can-upgrade"] == "False"
+    assert results["containerd"]["available"] == results["containerd"]["installed"]
+    assert results["containerd"]["upgrade-available"] == "False"
 
 
 @pytest.fixture(scope="module")
@@ -117,3 +117,29 @@ async def test_containerd_registry_with_private_registry(config_version, ops_tes
         docker_registry = next(iter(configs))
         assert configs[docker_registry]["tls"], "TLS config isn't represented in the config.toml"
         assert docker_registry in registry_unit.workload_status_message
+
+
+async def test_containerd_disable_gpu_support(ops_test, juju_config):
+    """Test that disabling gpu support removes nvidia drivers."""
+    await juju_config("containerd", gpu_driver="none")
+    for unit in ops_test.model.applications["containerd"].units:
+        output = await unit.run("cat /etc/apt/sources.list.d/nvidia.list")
+        stderr = output.data["results"].get("Stderr")
+        assert "No such file " in stderr, "NVIDIA sources list was populated"
+
+        output = await unit.run("dpkg-query --list cuda-drivers")
+        stderr = output.data["results"].get("Stderr")
+        assert "cuda-drivers" in stderr, "cuda-drivers shouldn't be installed"
+
+
+async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
+    """Test that enabling gpu support installed nvidia drivers."""
+    await juju_config("containerd", gpu_driver="nvidia")
+    for unit in ops_test.model.applications["containerd"].units:
+        output = await unit.run("cat /etc/apt/sources.list.d/nvidia.list")
+        stdout = output.data["results"].get("Stdout")
+        assert stdout, "NVIDIA sources list was empty"
+
+        output = await unit.run("dpkg-query --list cuda-drivers")
+        stdout = output.data["results"].get("Stdout")
+        assert "cuda-drivers" in stdout, "cuda-drivers not installed"

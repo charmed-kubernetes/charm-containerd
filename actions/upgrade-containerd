@@ -3,11 +3,11 @@
 from charmhelpers.core.hookenv import (
     action_set,
     action_get,
-    action_fail
+    action_fail,
+    config,
 )
 
 from charmhelpers.fetch import (
-    apt_cache,
     apt_hold,
     apt_install,
     apt_update,
@@ -18,29 +18,34 @@ from charmhelpers.fetch.ubuntu_apt_pkg import PkgVersion
 
 from charmhelpers.core.host import service_restart
 
-from charms.reactive import remove_state
+from charms.reactive import is_state, remove_state
 
-from reactive.containerd import CONTAINERD_PACKAGE
+from reactive.containerd import CONTAINERD_PACKAGE, apt_packages, configure_nvidia
 
 
 def _dry_run():
     """Determine if a new package is available."""
     apt_update(fatal=True)
-    try:
-        pkg = apt_cache()[CONTAINERD_PACKAGE]
-    except KeyError:
-        action_fail(f"{CONTAINERD_PACKAGE} not installed")
+    all_packages = [CONTAINERD_PACKAGE]
+
+    if is_state("containerd.nvidia.ready"):
+        all_packages += config("nvidia_apt_packages").split()
+
+    search = apt_packages(all_packages)
+    if CONTAINERD_PACKAGE not in search:
+        action_fail(f"{CONTAINERD_PACKAGE} not found in apt.")
         return
 
-    available, installed = map(PkgVersion, (pkg.get("version"), pkg.current_ver.get("ver_str")))
+    result = {}
+    for name, pkg in search.items():
+        available, installed = map(PkgVersion, (pkg.version, pkg.current_ver.ver_str))
+        result[f"{name}.available"] = available.version
+        result[f"{name}.installed"] = installed.version
+        result[f"{name}.upgrade-available"] = available > installed
 
-    result = {
-        "available": available.version,
-        "installed": installed.version,
-        "can-upgrade": available > installed
-    }
     action_set(result)
-    
+
+
 
 def _upgrade():
     """Do actual upgrade."""
@@ -48,8 +53,11 @@ def _upgrade():
         apt_update(fatal=True)
         apt_unhold(CONTAINERD_PACKAGE)
         apt_install(CONTAINERD_PACKAGE, fatal=True)
-
         apt_hold(CONTAINERD_PACKAGE)
+
+        if is_state("containerd.nvidia.ready"):
+            configure_nvidia(reconfigure=False)
+
         service_restart(CONTAINERD_PACKAGE)
 
         remove_state('containerd.version-published')
