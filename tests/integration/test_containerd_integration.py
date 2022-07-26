@@ -43,16 +43,20 @@ async def test_status_messages(ops_test):
 async def test_upgrade_containerd_action(ops_test):
     """Test running upgrade-containerd action."""
     unit = ops_test.model.applications["containerd"].units[0]
-    action = await unit.run_action("upgrade-containerd")
+    action = await unit.run_action("upgrade-packages")
     output = await action.wait()  # wait for result
     assert output.data.get("status") == "completed"
-    assert output.data.get("results", {}).get("runtime") == "containerd"
+    results = output.data.get("results", {})
+    log.info(f"Upgrade results = '{results}'")
+    assert results["containerd"]["available"] == results["containerd"]["installed"]
+    assert results["containerd"]["upgrade-available"] == "False"
+    assert not results["containerd"].get("upgrade-completed"), "No upgrade should have been run"
 
 
 async def test_upgrade_containerd_dry_run_action(ops_test):
     """Test running upgrade-containerd action."""
     unit = ops_test.model.applications["containerd"].units[0]
-    action = await unit.run_action("upgrade-containerd", **{"dry-run": True})
+    action = await unit.run_action("upgrade-packages", **{"dry-run": True})
     output = await action.wait()  # wait for result
     assert output.data.get("status") == "completed"
     results = output.data.get("results", {})
@@ -72,13 +76,26 @@ async def juju_config(ops_test):
         @param: dict new_config: configuration key=values to adjust
         @param: float  _timeout: time in seconds to wait for applications to be stable
         """
-        to_revert[application] = (
-            await ops_test.model.applications[application].get_config(),
-            new_config,
-            _timeout,
-        )
+        await update_reverts(application, new_config.keys(), _timeout)
         await ops_test.model.applications[application].set_config(new_config)
         await ops_test.model.wait_for_idle(apps=[application], status="active", timeout=_timeout)
+
+    async def update_reverts(application, configs, _timeout):
+        """Control what config is reverted per app during the test module teardown.
+
+        Because juju_config is a module scoped fixture, it isn't torn down until all the tests
+        in the module are completed. The `setup` method could be called multiple times
+        by various tests, but only the first call should gather the original config
+
+        Subsequent calls, should update which keys are reverted, and the greatest timeout
+        selected to revert all keys.
+        """
+        reverts = to_revert.get(application)
+        if not reverts:
+            reverts = (await ops_test.model.applications[application].get_config(), set(configs), _timeout)
+        else:
+            reverts = (reverts[0], reverts[1] | set(configs), max(reverts[2], _timeout))
+        to_revert[application] = reverts
 
     to_revert = {}
     yield setup
