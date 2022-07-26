@@ -30,7 +30,7 @@ async def test_build_and_deploy(ops_test):
     assert rc == 0, f"Bundle deploy failed: {(stderr or stdout).strip()}"
 
     apps = [app for fragment in (bundle, *overlays) for app in yaml.safe_load(fragment.open())["applications"]]
-    await ops_test.model.wait_for_idle(apps=apps, wait_for_active=True, timeout=60 * 60)
+    await ops_test.model.wait_for_idle(apps=apps, status="active", timeout=60 * 60)
 
 
 async def test_status_messages(ops_test):
@@ -65,20 +65,27 @@ async def test_upgrade_containerd_dry_run_action(ops_test):
 async def juju_config(ops_test):
     """Apply configuration for a test, then revert after the test is completed."""
 
-    async def setup(application, **new_config):
+    async def setup(application, _timeout=10 * 60, **new_config):
+        """Apply config by application name and the config values.
+
+        @param: str application: name of app to configure
+        @param: dict new_config: configuration key=values to adjust
+        @param: float  _timeout: time in seconds to wait for applications to be stable
+        """
         to_revert[application] = (
             await ops_test.model.applications[application].get_config(),
             new_config,
+            _timeout,
         )
         await ops_test.model.applications[application].set_config(new_config)
-        await ops_test.model.wait_for_idle(apps=[application], wait_for_active=True)
+        await ops_test.model.wait_for_idle(apps=[application], status="active", timeout=_timeout)
 
     to_revert = {}
     yield setup
-    for app, (pre_test, settable) in to_revert.items():
+    for app, (pre_test, settable, timeout) in to_revert.items():
         revert_config = {key: pre_test[key]["value"] for key in settable}
         await ops_test.model.applications[app].set_config(revert_config)
-    await ops_test.model.wait_for_idle(apps=list(to_revert.keys()), wait_for_active=True)
+    await ops_test.model.wait_for_idle(apps=list(to_revert.keys()), status="active", timeout=timeout)
 
 
 @pytest.fixture(scope="module", params=["v1", "v2"])
@@ -134,7 +141,7 @@ async def test_containerd_disable_gpu_support(ops_test, juju_config):
 
 async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
     """Test that enabling gpu support installed nvidia drivers."""
-    await juju_config("containerd", gpu_driver="nvidia")
+    await juju_config("containerd", gpu_driver="nvidia", _timeout=15 * 60)
     for unit in ops_test.model.applications["containerd"].units:
         output = await unit.run("cat /etc/apt/sources.list.d/nvidia.list")
         stdout = output.data["results"].get("Stdout")
