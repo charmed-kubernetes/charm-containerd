@@ -40,10 +40,18 @@ async def test_status_messages(ops_test):
         assert unit.workload_status_message == "Container runtime available"
 
 
-async def test_upgrade_containerd_action(ops_test):
-    """Test running upgrade-containerd action."""
+async def process_elapsed_time(unit, process):
+    """Get elasped time of a running process."""
+    result = await unit.run(f"ps -p `pidof {process}` -o etimes=")
+    return int(result.data["results"]["Stdout"])
+
+
+@pytest.mark.parametrize("which_action", ("containerd", "packages"))
+async def test_upgrade_action(ops_test, which_action):
+    """Test running upgrade action."""
     unit = ops_test.model.applications["containerd"].units[0]
-    action = await unit.run_action("upgrade-packages")
+    start = await process_elapsed_time(unit, "containerd")
+    action = await unit.run_action(f"upgrade-{which_action}")
     output = await action.wait()  # wait for result
     assert output.data.get("status") == "completed"
     results = output.data.get("results", {})
@@ -51,18 +59,24 @@ async def test_upgrade_containerd_action(ops_test):
     assert results["containerd"]["available"] == results["containerd"]["installed"]
     assert results["containerd"]["upgrade-available"] == "False"
     assert not results["containerd"].get("upgrade-completed"), "No upgrade should have been run"
+    end = await process_elapsed_time(unit, "containerd")
+    assert end >= start, "containerd service shouldn't have been restarted"
 
 
-async def test_upgrade_containerd_dry_run_action(ops_test):
-    """Test running upgrade-containerd action."""
+@pytest.mark.parametrize("which_action", ("containerd", "packages"))
+async def test_upgrade_dry_run_action(ops_test, which_action):
+    """Test running upgrade action in dry-run mode."""
     unit = ops_test.model.applications["containerd"].units[0]
-    action = await unit.run_action("upgrade-packages", **{"dry-run": True})
+    start = await process_elapsed_time(unit, "containerd")
+    action = await unit.run_action(f"upgrade-{which_action}", **{"dry-run": True})
     output = await action.wait()  # wait for result
     assert output.data.get("status") == "completed"
     results = output.data.get("results", {})
     log.info(f"Upgrade dry-run results = '{results}'")
     assert results["containerd"]["available"] == results["containerd"]["installed"]
     assert results["containerd"]["upgrade-available"] == "False"
+    end = await process_elapsed_time(unit, "containerd")
+    assert end >= start, "containerd service shouldn't have been restarted"
 
 
 @pytest.fixture(scope="module")

@@ -91,7 +91,7 @@ def _upgrade(containerd, gpu):
             for pkg in _gpu_packages():
                 upgrade_list[f"{pkg}.upgrade-complete"] = True
 
-        if upgrade_list:
+        if any(upgrade_list.get(f"{pkg}.upgrade-complete") for pkg in upgrade_list):
             service_restart(CONTAINERD_PACKAGE)
             remove_state("containerd.version-published")
 

@@ -17,7 +17,7 @@ upgrade-packages:
         containerd:
             type: boolean
             default: true
-            description: Upgrade containerd in the event there is are package updates available.
+            description: Upgrade containerd in the event there are package updates available.
         gpu:
             type: boolean
             default: false
