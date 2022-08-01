@@ -91,7 +91,7 @@ options:
     type: string
     default: |
       https://nvidia.github.io/nvidia-container-runtime/gpgkey
-      https://developer.download.nvidia.com/compute/cuda/repos/{id}{version_id_no_dot}/x86_64/7fa2af80.pub
+      https://developer.download.nvidia.com/compute/cuda/repos/{id}{version_id_no_dot}/x86_64/3bf863cc.pub
     description: |
         Space-separated list of APT GPG key URLs to add when using Nvidia GPUs.
 
@@ -104,7 +104,7 @@ options:
     default: |
       deb https://nvidia.github.io/libnvidia-container/{id}{version_id}/$(ARCH) /
       deb https://nvidia.github.io/nvidia-container-runtime/{id}{version_id}/$(ARCH) /
-      deb http://developer.download.nvidia.com/compute/cuda/repos/{id}{version_id_no_dot}/x86_64 /
+      deb https://developer.download.nvidia.com/compute/cuda/repos/{id}{version_id_no_dot}/x86_64 /
     description: |
         Newline-separated list of APT sources to add when using Nvidia GPUs.
 

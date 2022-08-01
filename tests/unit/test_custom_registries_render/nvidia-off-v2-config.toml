@@ -68,7 +68,7 @@ version = 2
     default = ["walking"]
   [plugins."io.containerd.runtime.v1.linux"]
     shim = ""
-    runtime = ""
+    runtime = "runc"
     runtime_root = ""
     no_shim = false
     shim_debug = false
