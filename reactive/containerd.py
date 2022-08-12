@@ -49,6 +49,8 @@ from charmhelpers.fetch import (
 
 from charmhelpers.fetch.ubuntu_apt_pkg import Package
 
+NVIDIA_SOURCES_FILE = "/etc/apt/sources.list.d/nvidia.list"
+
 
 def apt_packages(packages: Set[str]) -> Mapping[str, Package]:
     """Return a mapping of package names to Package classes.
@@ -121,7 +123,6 @@ DB = unitdata.kv()
 
 CONTAINERD_PACKAGE = "containerd"
 
-register_trigger(when="config.changed.nvidia_apt_key_urls", clear_flag="containerd.nvidia.ready")
 register_trigger(when="config.changed.nvidia_apt_sources", clear_flag="containerd.nvidia.ready")
 register_trigger(when="config.changed.nvidia_apt_packages", clear_flag="containerd.nvidia.ready")
 
@@ -178,6 +179,10 @@ def charm_status():
         status.blocked("Series upgrade in progress")
     elif is_state("containerd.nvidia.invalid-option"):
         status.blocked("{} is an invalid option for gpu_driver".format(config().get("gpu_driver")))
+    elif is_state("containerd.nvidia.fetch_keys_failed"):
+        status.blocked("Failed to fetch nvidia_apt_key_urls.")
+    elif is_state("containerd.nvidia.missing_package_list"):
+        status.blocked("No NVIDIA packages selected to install.")
     elif _check_containerd():
         status.active("Container runtime available")
         set_state("containerd.ready")
@@ -499,17 +504,16 @@ def unconfigure_nvidia(reconfigure=True):
 
     :return: None
     """
-    status.maintenance("Removing Nvidia drivers.")
+    status.maintenance("Removing NVIDIA drivers.")
 
     nvidia_packages = config("nvidia_apt_packages").split()
     to_purge = apt_packages(nvidia_packages).keys()
+
     if to_purge:
         apt_purge(to_purge, fatal=True)
 
-    source = "/etc/apt/sources.list.d/nvidia.list"
-
-    if os.path.isfile(source):
-        os.remove(source)
+    if os.path.isfile(NVIDIA_SOURCES_FILE):
+        os.remove(NVIDIA_SOURCES_FILE)
 
     if to_purge:
         apt_autoremove(purge=True, fatal=True)
@@ -519,16 +523,13 @@ def unconfigure_nvidia(reconfigure=True):
         config_changed()
 
 
-@when("containerd.nvidia.available")
-@when_not("containerd.nvidia.ready", "endpoint.containerd.departed")
-def configure_nvidia(reconfigure=True):
-    """Based on charm config, install and configure Nivida drivers.
+@when("config.changed.nvidia_apt_key_urls")
+def configure_nvidia_sources():
+    """Configure NVIDIA repositories based on charm config.
 
     :return: None
     """
-    # Fist remove any existing nvidia drivers
-    unconfigure_nvidia(reconfigure=False)
-    status.maintenance("Installing Nvidia drivers.")
+    status.maintenance("Configuring NVIDIA repositories.")
 
     dist = host.lsb_release()
     os_release_id = dist["DISTRIB_ID"].lower()
@@ -538,18 +539,23 @@ def configure_nvidia(reconfigure=True):
     key_urls = config("nvidia_apt_key_urls").split()
     formatted_key_urls = [
         key_url.format(
-            id=os_release_id, version_id=os_release_version_id, version_id_no_dot=os_release_version_id_no_dot
+            id=os_release_id,
+            version_id=os_release_version_id,
+            version_id_no_dot=os_release_version_id_no_dot,
         )
         for key_url in key_urls
     ]
     if formatted_key_urls:
         fetched_keys = fetch_url_text(formatted_key_urls)
         if not all(fetched_keys):
-            status.blocked("Failed to fetch nvidia_apt_key_urls.")
+            set_state("containerd.nvidia.fetch_keys_failed")
             return
 
         for key in fetched_keys:
             import_key(key)
+
+    if os.path.isfile(NVIDIA_SOURCES_FILE):
+        os.remove(NVIDIA_SOURCES_FILE)
 
     sources = config("nvidia_apt_sources").splitlines()
     formatted_sources = [
@@ -560,13 +566,25 @@ def configure_nvidia(reconfigure=True):
         )
         for source in sources
     ]
-    with open("/etc/apt/sources.list.d/nvidia.list", "w") as f:
+    with open(NVIDIA_SOURCES_FILE, "w") as f:
         f.write("\n".join(formatted_sources))
+
+
+@when("containerd.nvidia.available")
+@when_not("containerd.nvidia.ready", "endpoint.containerd.departed")
+def install_nvidia_drivers(reconfigure=True):
+    """Based on charm config, install and configure NVIDIA drivers.
+
+    :return: None
+    """
+    # Fist remove any existing nvidia drivers
+    unconfigure_nvidia(reconfigure=False)
+    configure_nvidia_sources()
 
     apt_update()
     nvidia_packages = config("nvidia_apt_packages").split()
     if not nvidia_packages:
-        status.blocked("No NVIDIA packages selected to install.")
+        set_state("containerd.nvidia.missing_package_list")
         return
 
     apt_install(nvidia_packages, fatal=True)
