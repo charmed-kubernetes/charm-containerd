@@ -1,4 +1,3 @@
-
 apt-http-proxy: http://squid.internal:3128
 apt-https-proxy: http://squid.internal:3128
 apt-no-proxy: localhost,127.0.0.1,ppa.launchpad.net,launchpad.net
