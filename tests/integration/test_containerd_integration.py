@@ -184,6 +184,7 @@ async def test_containerd_registry_with_private_registry(config_version, ops_tes
             assert configs[docker_registry]["tls"], "TLS config isn't represented in the v1 config.toml"
             assert hostname in registry_unit.workload_status_message
 
+
 async def test_containerd_disable_gpu_support(ops_test, juju_config):
     """Test that disabling gpu support removes nvidia drivers."""
     await juju_config("containerd", gpu_driver="none")
