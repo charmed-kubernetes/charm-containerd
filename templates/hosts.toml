@@ -1,0 +1,13 @@
+server = "https://{{ registry.host }}"
+
+[host."{{ registry.url }}"]
+  capabilities = ["pull", "resolve"]
+  {%- if registry.insecure_skip_verify %}
+  skip_verify = true
+  {%- endif %}
+  {%- if registry.ca %}
+  ca = "{{ registry.ca }}"
+  {%- endif %}
+  {%- if registry.cert %}
+  client = [{{ [registry.cert, registry.key]|tojson }}]
+  {%- endif %}
