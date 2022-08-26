@@ -3,3 +3,6 @@
 __pycache__/
 *.pyc
 report/
+# prevent the following from showing up in the built charm
+.github/
+tests/

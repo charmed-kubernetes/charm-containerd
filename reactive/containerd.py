@@ -8,7 +8,7 @@ import shutil
 import traceback
 
 from subprocess import check_call, check_output, CalledProcessError
-from typing import List, Optional
+from typing import List, Mapping, Optional, Set
 import urllib.request
 import urllib.error
 
@@ -38,6 +38,7 @@ from charmhelpers.core.hookenv import atexit, config, env_proxy_settings, log, a
 from charmhelpers.core.kernel import modprobe
 
 from charmhelpers.fetch import (
+    apt_cache,
     apt_install,
     apt_update,
     apt_purge,
@@ -46,6 +47,34 @@ from charmhelpers.fetch import (
     apt_unhold,
     import_key,
 )
+
+from charmhelpers.fetch.ubuntu_apt_pkg import Package
+
+
+def apt_packages(packages: Set[str]) -> Mapping[str, Package]:
+    """Return a mapping of package names to Package classes.
+
+    Ignores all packages which aren't available to apt
+    Includes any package which wildcard matches with an installed package
+
+    @param packages: List of packages for which to search
+    @returns: Map of available packages
+    """
+    result = {}
+    if not packages:
+        return result
+
+    cache = apt_cache()
+    # also search for any already installed packages matching
+    wildcards = [_ + "*" for _ in packages]
+    packages = set(cache.dpkg_list(wildcards).keys()) | set(packages)
+
+    for pkg_name in packages:
+        try:
+            result[pkg_name] = cache[pkg_name]
+        except KeyError:
+            log(f"Cannot find {pkg_name} in apt.")
+    return result
 
 
 @contextlib.contextmanager
@@ -472,26 +501,59 @@ def check_for_gpu():
         return
 
     out = check_output(["lspci", "-nnk"]).rstrip().decode("utf-8").lower()
+    nvidia_pci, auto = out.count("nvidia"), driver_config == "auto"
 
-    if driver_config != "none":
-        if (out.count("nvidia") > 0 and driver_config == "auto") or (driver_config == "nvidia"):
-            set_state("containerd.nvidia.available")
-        else:
-            remove_state("containerd.nvidia.available")
-            remove_state("containerd.nvidia.ready")
+    if driver_config == "none" or (auto and not nvidia_pci):
+        # prevent/remove nvidia driver from activating
+        # because of config or no nvidia hardware found
+        remove_state("containerd.nvidia.available")
+
+    if driver_config == "nvidia" or (auto and nvidia_pci):
+        # allow/install nvidia drivers to activate
+        # because of config or this found nvidia hardware
+        set_state("containerd.nvidia.available")
 
     remove_state("containerd.nvidia.invalid-option")
     set_state("containerd.nvidia.checked")
 
 
-@when("containerd.nvidia.available")
-@when_not("containerd.nvidia.ready", "endpoint.containerd.departed")
-def configure_nvidia():
+@when("containerd.nvidia.ready")
+@when_not("containerd.nvidia.available")
+def unconfigure_nvidia(reconfigure=True):
     """
-    Based on charm config, install and configure Nivida drivers.
+    Based on charm config, remove NVIDIA drivers.
 
     :return: None
     """
+    status.maintenance("Removing Nvidia drivers.")
+
+    nvidia_packages = config("nvidia_apt_packages").split()
+    to_purge = apt_packages(nvidia_packages).keys()
+    if to_purge:
+        apt_purge(to_purge, fatal=True)
+
+    source = "/etc/apt/sources.list.d/nvidia.list"
+
+    if os.path.isfile(source):
+        os.remove(source)
+
+    if to_purge:
+        apt_autoremove(purge=True, fatal=True)
+
+    remove_state("containerd.nvidia.ready")
+    if reconfigure:
+        config_changed()
+
+
+@when("containerd.nvidia.available")
+@when_not("containerd.nvidia.ready", "endpoint.containerd.departed")
+def configure_nvidia(reconfigure=True):
+    """Based on charm config, install and configure Nivida drivers.
+
+    :return: None
+    """
+    # Fist remove any existing nvidia drivers
+    unconfigure_nvidia(reconfigure=False)
     status.maintenance("Installing Nvidia drivers.")
 
     dist = host.lsb_release()
@@ -528,11 +590,16 @@ def configure_nvidia():
         f.write("\n".join(formatted_sources))
 
     apt_update()
-    packages = config("nvidia_apt_packages").split()
-    apt_install(packages, fatal=True)
+    nvidia_packages = config("nvidia_apt_packages").split()
+    if not nvidia_packages:
+        status.blocked("No NVIDIA packages selected to install.")
+        return
+
+    apt_install(nvidia_packages, fatal=True)
 
     set_state("containerd.nvidia.ready")
-    config_changed()
+    if reconfigure:
+        config_changed()
 
 
 @when("endpoint.containerd.departed")
@@ -549,14 +616,7 @@ def purge_containerd():
     apt_purge(CONTAINERD_PACKAGE, fatal=True)
 
     if is_state("containerd.nvidia.ready"):
-        nvidia_packages = config("nvidia_apt_packages").split()
-        apt_purge(nvidia_packages, fatal=True)
-
-    sources = ["/etc/apt/sources.list.d/nvidia.list"]
-
-    for f in sources:
-        if os.path.isfile(f):
-            os.remove(f)
+        unconfigure_nvidia(reconfigure=False)
 
     apt_autoremove(purge=True, fatal=True)
 
