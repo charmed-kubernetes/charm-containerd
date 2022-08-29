@@ -8,7 +8,7 @@ import yaml
 from charmhelpers.core import unitdata, host
 from charmhelpers.core.templating import render
 from charmhelpers.fetch import import_key
-from charms.reactive import is_state
+from charms.reactive import is_state, set_state
 from reactive import containerd
 import tempfile
 import pytest
@@ -282,13 +282,10 @@ def test_install_nvidia_drivers(
     mock_config_changed,
 ):
     """Verify drivers are removed, config is done, and containerd config is updated."""
+    set_state.reset_mock()
     containerd.install_nvidia_drivers()
     mock_unconfigure_nvidia.assert_called_once_with(reconfigure=False)
     mock_configure_nvidia_sources.assert_called_once_with()
 
     mock_config_changed.assert_called_once_with()
-    flags = {
-        "containerd.nvidia.ready": True,
-        "containerd.nvidia.missing_package_list": True,
-    }
-    is_state.side_effect = lambda flag: flags[flag]
+    set_state.assert_called_once_with("containerd.nvidia.ready")

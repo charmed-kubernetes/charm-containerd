@@ -550,6 +550,7 @@ def configure_nvidia_sources():
         if not all(fetched_keys):
             set_state("containerd.nvidia.fetch_keys_failed")
             return
+        remove_state("containerd.nvidia.fetch_keys_failed")
 
         for key in fetched_keys:
             import_key(key)
@@ -569,6 +570,8 @@ def configure_nvidia_sources():
     with open(NVIDIA_SOURCES_FILE, "w") as f:
         f.write("\n".join(formatted_sources))
 
+    return True
+
 
 @when("containerd.nvidia.available")
 @when_not("containerd.nvidia.ready", "endpoint.containerd.departed")
@@ -579,13 +582,16 @@ def install_nvidia_drivers(reconfigure=True):
     """
     # Fist remove any existing nvidia drivers
     unconfigure_nvidia(reconfigure=False)
-    configure_nvidia_sources()
+    if not configure_nvidia_sources():
+        return
 
+    status.maintenance("Installing NVIDIA drivers.")
     apt_update()
     nvidia_packages = config("nvidia_apt_packages").split()
     if not nvidia_packages:
         set_state("containerd.nvidia.missing_package_list")
         return
+    remove_state("containerd.nvidia.missing_package_list")
 
     apt_install(nvidia_packages, fatal=True)
 
