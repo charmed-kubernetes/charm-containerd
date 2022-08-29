@@ -549,7 +549,7 @@ def configure_nvidia_sources():
         fetched_keys = fetch_url_text(formatted_key_urls)
         if not all(fetched_keys):
             set_state("containerd.nvidia.fetch_keys_failed")
-            return
+            return False
         remove_state("containerd.nvidia.fetch_keys_failed")
 
         for key in fetched_keys:
