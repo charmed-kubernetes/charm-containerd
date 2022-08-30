@@ -523,11 +523,11 @@ def unconfigure_nvidia(reconfigure=True):
         config_changed()
 
 
-@when("config.changed.nvidia_apt_key_urls")
+@when("containerd.nvidia.available", "config.changed.nvidia_apt_key_urls")
 def configure_nvidia_sources():
     """Configure NVIDIA repositories based on charm config.
 
-    :return: None
+    :return: bool - True if successufully fetched
     """
     status.maintenance("Configuring NVIDIA repositories.")
 
