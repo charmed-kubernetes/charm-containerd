@@ -83,7 +83,7 @@ async def test_upgrade_action_containerd_force(ops_test):
     """Test running upgrade action without GPU and with force."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action(f"upgrade-packages", **{"force": True})
+    action = await unit.run_action("upgrade-packages", **{"force": True})
     output = await action.wait()  # wait for result
     assert output.data.get("status") == "completed"
     results = output.data.get("results", {})
@@ -99,9 +99,7 @@ async def test_upgrade_action_without_gpu_gpu_force(ops_test):
     """Test running upgrade action with GPU and force without GPU does nothing."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action(
-        f"upgrade-packages", **{"containerd": False, "gpu": True, "force": True}
-    )
+    action = await unit.run_action("upgrade-packages", **{"containerd": False, "gpu": True, "force": True})
     output = await action.wait()  # wait for result
     assert output.data.get("status") == "completed"
     results = output.data.get("results", {})
@@ -208,9 +206,7 @@ async def test_upgrade_action_gpu_force(ops_test):
     """Test running upgrade action with GPU and force."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action(
-        f"upgrade-packages", **{"containerd": False, "gpu": True, "force": True}
-    )
+    action = await unit.run_action("upgrade-packages", **{"containerd": False, "gpu": True, "force": True})
     output = await action.wait()  # wait for result
     assert output.data.get("status") == "completed"
     results = output.data.get("results", {})

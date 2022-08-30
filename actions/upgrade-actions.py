@@ -87,16 +87,10 @@ def _upgrade(containerd, gpu):
             apt_hold(pkg)
             upgrade_list[f"{pkg}.upgrade-complete"] = True
 
-        if (
-            gpu
-            and action_get().get("force")
-            and is_state("containerd.nvidia.ready")
-        ):
+        if gpu and action_get().get("force") and is_state("containerd.nvidia.ready"):
             force_upgrade = True
 
-        if any(
-            upgrade_list.get(f"{pkg}.upgrade-available") for pkg in _gpu_packages()
-        ) or force_upgrade:
+        if any(upgrade_list.get(f"{pkg}.upgrade-available") for pkg in _gpu_packages()) or force_upgrade:
             install_nvidia_drivers(reconfigure=False)
             for pkg in _gpu_packages():
                 upgrade_list[f"{pkg}.upgrade-complete"] = True
