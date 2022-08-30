@@ -23,7 +23,7 @@ from charmhelpers.core.host import service_restart
 
 from charms.reactive import is_state, remove_state
 
-from reactive.containerd import CONTAINERD_PACKAGE, apt_packages, install_nvidia_drivers
+from reactive.containerd import CONTAINERD_PACKAGE, apt_packages, configure_nvidia
 
 
 class ActionError(Exception):
@@ -87,7 +87,7 @@ def _upgrade(containerd, gpu):
             upgrade_list[f"{pkg}.upgrade-complete"] = True
 
         if any(upgrade_list.get(f"{pkg}.upgrade-available") for pkg in _gpu_packages()):
-            install_nvidia_drivers(reconfigure=False)
+            configure_nvidia(reconfigure=False)
             for pkg in _gpu_packages():
                 upgrade_list[f"{pkg}.upgrade-complete"] = True
 

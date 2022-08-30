@@ -8,7 +8,7 @@ import yaml
 from charmhelpers.core import unitdata, host
 from charmhelpers.core.templating import render
 from charmhelpers.fetch import import_key
-from charms.reactive import is_state, set_state
+from charms.reactive import is_state
 from reactive import containerd
 import tempfile
 import pytest
@@ -216,34 +216,15 @@ def test_fetch_url_text(log, env_proxy_settings, success):
 
 
 @mock.patch.object(containerd, "config_changed")
-@mock.patch.object(containerd, "apt_autoremove")
-@mock.patch.object(os, "remove")
-@mock.patch.object(containerd, "apt_purge")
-@mock.patch("builtins.open")
-@pytest.mark.usefixtures("default_config")
-def test_unconfigure_nvidia(mock_open, mock_apt_purge, mock_os_remove, mock_apt_autoremove, mock_config_changed):
-    """Verify NVIDIA config is removed."""
-    tmp_dir = tempfile.TemporaryDirectory()
-    tmp_path = pathlib.Path(tmp_dir.name)
-    sources_file = os.path.join(tmp_path, "nvidia.list")
-    with mock.patch("reactive.containerd.NVIDIA_SOURCES_FILE", sources_file):
-        containerd.unconfigure_nvidia()
-    mock_apt_purge.assert_called_once
-    mock_os_remove.assert_called_once
-    mock_apt_autoremove.assert_called_once
-    mock_config_changed.assert_called_once_with()
-    assert not os.path.exists(sources_file)
-
-
 @mock.patch.object(containerd, "fetch_url_text", return_value=["-key1-", "-key2-"])
 @mock.patch("builtins.open")
 @pytest.mark.usefixtures("default_config")
-def test_configure_nvidia_sources(mock_open, fetch_url_text):
-    """Verify NVIDIA apt sources are configured and keys are imported."""
+def test_configure_nvidia(mock_open, fetch_url_text, mock_config_changed):
+    """Verify nvidia apt sources are configured."""
     mock_lsb_release = dict(DISTRIB_ID="ubuntu", DISTRIB_RELEASE="20.04")
     import_key.reset_mock()
     with mock.patch.object(host, "lsb_release", return_value=mock_lsb_release):
-        containerd.configure_nvidia_sources()
+        containerd.configure_nvidia()
 
     # keys should be fetched from formatted urls
     fetch_url_text.assert_called_with(
@@ -271,21 +252,5 @@ def test_configure_nvidia_sources(mock_open, fetch_url_text):
         "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64 /"
     )
 
-
-@mock.patch.object(containerd, "config_changed")
-@mock.patch.object(containerd, "configure_nvidia_sources")
-@mock.patch.object(containerd, "unconfigure_nvidia")
-@pytest.mark.usefixtures("default_config")
-def test_install_nvidia_drivers(
-    mock_unconfigure_nvidia,
-    mock_configure_nvidia_sources,
-    mock_config_changed,
-):
-    """Verify drivers are removed, config is done, and containerd config is updated."""
-    set_state.reset_mock()
-    containerd.install_nvidia_drivers()
-    mock_unconfigure_nvidia.assert_called_once_with(reconfigure=False)
-    mock_configure_nvidia_sources.assert_called_once_with()
-
+    # Finally a config_changed action should be run
     mock_config_changed.assert_called_once_with()
-    set_state.assert_called_once_with("containerd.nvidia.ready")
