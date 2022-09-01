@@ -19,7 +19,7 @@ from charms.reactive import (
     remove_state,
     endpoint_from_flag,
     register_trigger,
-    clear_flag
+    clear_flag,
 )
 
 from charms.layer import containerd, status
@@ -411,7 +411,7 @@ def upgrade_charm():
         if os.path.exists(source_file):
             os.remove(source_file)
             remove_state("containerd.nvidia.ready")
-    
+
     # Update containerd version
     clear_flag("containerd.version-published")
 
