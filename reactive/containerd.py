@@ -19,6 +19,7 @@ from charms.reactive import (
     remove_state,
     endpoint_from_flag,
     register_trigger,
+    clear_flag
 )
 
 from charms.layer import containerd, status
@@ -134,7 +135,7 @@ def _check_containerd():
     `ctr version` calls both client and server side, so is a reasonable indication that everything's been set up
     correctly.
 
-    :return: Boolean
+    :return: bytes
     """
     try:
         version = check_output(["ctr", "version"])
@@ -410,6 +411,9 @@ def upgrade_charm():
         if os.path.exists(source_file):
             os.remove(source_file)
             remove_state("containerd.nvidia.ready")
+    
+    # Update containerd version
+    clear_flag("containerd.version-published")
 
 
 @when_not("containerd.br_netfilter.enabled")
@@ -458,7 +462,7 @@ def publish_version_to_juju():
     version_string = _check_containerd()
     if not version_string:
         return
-    version = version_string.split()[6].split(b"-")[0].decode()
+    version = version_string.split()[9].split(b"-")[0].decode()
 
     application_version_set(version)
     set_state("containerd.version-published")
