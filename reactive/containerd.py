@@ -459,10 +459,16 @@ def publish_version_to_juju():
 
     :return: None
     """
-    version_string = _check_containerd()
-    if not version_string:
+    output = _check_containerd()
+    if not output:
         return
-    version = version_string.split()[9].split(b"-")[0].decode()
+
+    output = output.decode()
+    version_lines = set(line for line in output.split("\n") if "Version" in line)
+    if len(version_lines) == 0:
+        return
+
+    version = version_lines.pop().split()[1].split("-")[0]
 
     application_version_set(version)
     set_state("containerd.version-published")
