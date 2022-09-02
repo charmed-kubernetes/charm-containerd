@@ -3,6 +3,7 @@ import os
 import base64
 import binascii
 import json
+import re
 import traceback
 
 from subprocess import check_call, check_output, CalledProcessError
@@ -464,11 +465,11 @@ def publish_version_to_juju():
         return
 
     output = output.decode()
-    version_lines = set(line for line in output.split("\n") if "Version" in line)
-    if len(version_lines) == 0:
+    ver_re = re.compile(r"Version:\s+([\d\.]+)-")
+    version_matches = set(m.group(1) for m in (ver_re.match(line) for line in output.split("\n")) if m)
+    if len(version_matches) != 1:
         return
-
-    version = version_lines.pop().split()[1].split("-")[0]
+    (version,) = version_matches
 
     application_version_set(version)
     set_state("containerd.version-published")
