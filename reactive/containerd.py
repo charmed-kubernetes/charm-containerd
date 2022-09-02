@@ -3,6 +3,7 @@ import os
 import base64
 import binascii
 import json
+import re
 import traceback
 
 from subprocess import check_call, check_output, CalledProcessError
@@ -19,6 +20,7 @@ from charms.reactive import (
     remove_state,
     endpoint_from_flag,
     register_trigger,
+    clear_flag,
 )
 
 from charms.layer import containerd, status
@@ -134,7 +136,7 @@ def _check_containerd():
     `ctr version` calls both client and server side, so is a reasonable indication that everything's been set up
     correctly.
 
-    :return: Boolean
+    :return: bytes
     """
     try:
         version = check_output(["ctr", "version"])
@@ -411,6 +413,9 @@ def upgrade_charm():
             os.remove(source_file)
             remove_state("containerd.nvidia.ready")
 
+    # Update containerd version
+    clear_flag("containerd.version-published")
+
 
 @when_not("containerd.br_netfilter.enabled")
 def enable_br_netfilter_module():
@@ -455,10 +460,16 @@ def publish_version_to_juju():
 
     :return: None
     """
-    version_string = _check_containerd()
-    if not version_string:
+    output = _check_containerd()
+    if not output:
         return
-    version = version_string.split()[6].split(b"-")[0].decode()
+
+    output = output.decode()
+    ver_re = re.compile(r"\s*Version:\s+([\d\.]+)")
+    version_matches = set(m.group(1) for m in (ver_re.match(line) for line in output.split("\n")) if m)
+    if len(version_matches) != 1:
+        return
+    (version,) = version_matches
 
     application_version_set(version)
     set_state("containerd.version-published")

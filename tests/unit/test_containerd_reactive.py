@@ -289,3 +289,22 @@ def test_install_nvidia_drivers(
 
     mock_config_changed.assert_called_once_with()
     set_state.assert_called_once_with("containerd.nvidia.ready")
+
+
+@mock.patch.object(containerd, "application_version_set")
+@mock.patch.object(containerd, "_check_containerd")
+def test_containerd_version(mock_check, mock_version_set):
+    """Verify containerd version parser."""
+    version = b"""Client:
+    Version:  1.5.9-0ubuntu1~20.04.4
+      Revision:
+      Go version: go1.13.8
+
+    Server:
+      Version:  1.5.9-0ubuntu1~20.04.4
+      Revision:
+      UUID: dc3fb3f1-3217-458b-8aaf-df2d7a4c7b91"""
+
+    mock_check.return_value = version
+    containerd.publish_version_to_juju()
+    mock_version_set.assert_called_once_with("1.5.9")
