@@ -95,8 +95,12 @@ async def test_upgrade_action_containerd_force(ops_test):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-async def test_upgrade_action_without_gpu_gpu_force(ops_test):
-    """Test running upgrade action with GPU and force without GPU does nothing."""
+async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test):
+    """Test running GPU force upgrade-action with no GPU drivers installed.
+
+    upgrade-action with `GPU` and `force` flags both set but without GPU drivers currently
+    installed should not upgrade any GPU drivers.
+    """
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
     action = await unit.run_action("upgrade-packages", **{"containerd": False, "gpu": True, "force": True})
