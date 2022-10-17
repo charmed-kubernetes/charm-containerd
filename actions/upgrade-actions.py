@@ -62,7 +62,9 @@ def _dry_run(containerd, gpu):
 
     result = {}
     for name, pkg in search.items():
-        available, installed = map(PkgVersion, (pkg.version, pkg.current_ver.ver_str))
+        current_ver = pkg.current_ver.ver_str if pkg.current_ver else "0.not-installed.0"
+        # there could be a package not install with a current version, assume it needs updating?
+        available, installed = map(PkgVersion, (pkg.version, current_ver))
         result[f"{name}.available"] = available.version
         result[f"{name}.installed"] = installed.version
         result[f"{name}.upgrade-available"] = available > installed

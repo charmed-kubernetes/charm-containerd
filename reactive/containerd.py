@@ -6,7 +6,7 @@ import json
 import re
 import traceback
 
-from subprocess import check_call, check_output, CalledProcessError
+from subprocess import check_call, check_output, CalledProcessError, STDOUT
 from typing import List, Mapping, Optional, Set
 import urllib.request
 import urllib.error
@@ -170,6 +170,20 @@ def _juju_proxy_changed():
     return True
 
 
+def _needs_gpu_reboot() -> bool:
+    if is_state("containerd.nvidia.available"):
+        try:
+            check_output(["nvidia-smi"], stderr=STDOUT)
+        except CalledProcessError as cpe:
+            log("Unable to communicate with the NVIDIA driver.")
+            log(cpe.stdout.decode())
+            log(cpe)
+            return True
+        except FileNotFoundError as fne:
+            log("NVIDIA SMI not installed.")
+            log(fne)
+
+
 @atexit
 def charm_status():
     """
@@ -185,6 +199,8 @@ def charm_status():
         status.blocked("Failed to fetch nvidia_apt_key_urls.")
     elif is_state("containerd.nvidia.missing_package_list"):
         status.blocked("No NVIDIA packages selected to install.")
+    elif _needs_gpu_reboot():
+        status.blocked("May need reboot to activate GPU.")
     elif _check_containerd():
         status.active("Container runtime available")
         set_state("containerd.ready")
