@@ -176,9 +176,8 @@ def _needs_gpu_reboot() -> bool:
             check_output(["nvidia-smi"], stderr=STDOUT)
         except CalledProcessError as cpe:
             log("Unable to communicate with the NVIDIA driver.")
-            log(cpe.stdout.decode())
             log(cpe)
-            return True
+            return any(message in cpe.stdout for message in ["Driver/library version mismatch"])
         except FileNotFoundError as fne:
             log("NVIDIA SMI not installed.")
             log(fne)
