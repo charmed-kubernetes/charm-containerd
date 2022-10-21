@@ -332,6 +332,7 @@ def test_containerd_version(mock_check, mock_version_set):
     ],
 )
 def test_needs_gpu_reboot_false(check_output, is_state, remove_state, set_state, params):
+    """Verify situations where no gpu induced reboot is needed."""
     nvidia_available, nvidia_smi_exception = params
     is_state.return_value = nvidia_available
     check_output.side_effect = nvidia_smi_exception
@@ -350,6 +351,7 @@ def test_needs_gpu_reboot_false(check_output, is_state, remove_state, set_state,
 @mock.patch.object(containerd, "is_state")
 @mock.patch.object(containerd, "check_output")
 def test_needs_gpu_reboot_true(check_output, is_state, remove_state, set_state):
+    """Verify situations where a gpu induced reboot is needed."""
     is_state.return_value = True
     check_output.side_effect = CalledProcessError(-1, "nvidia-smi", output=b"Driver/library version mismatch")
     assert containerd._test_gpu_reboot()
