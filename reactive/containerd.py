@@ -170,17 +170,23 @@ def _juju_proxy_changed():
     return True
 
 
-def _needs_gpu_reboot() -> bool:
+def _test_gpu_reboot() -> bool:
+    reboot = False
     if is_state("containerd.nvidia.available"):
         try:
             check_output(["nvidia-smi"], stderr=STDOUT)
         except CalledProcessError as cpe:
             log("Unable to communicate with the NVIDIA driver.")
             log(cpe)
-            return any(message in cpe.stdout.decode() for message in ["Driver/library version mismatch"])
+            reboot = any(message in cpe.stdout.decode() for message in ["Driver/library version mismatch"])
         except FileNotFoundError as fne:
             log("NVIDIA SMI not installed.")
             log(fne)
+    if reboot:
+        set_state("containerd.nvidia.needs_reboot")
+    else:
+        remove_state("containerd.nvidia.needs_reboot")
+    return reboot
 
 
 @atexit
@@ -198,7 +204,7 @@ def charm_status():
         status.blocked("Failed to fetch nvidia_apt_key_urls.")
     elif is_state("containerd.nvidia.missing_package_list"):
         status.blocked("No NVIDIA packages selected to install.")
-    elif _needs_gpu_reboot():
+    elif is_state("containerd.nvidia.needs_reboot"):
         status.blocked("May need reboot to activate GPU.")
     elif _check_containerd():
         status.active("Container runtime available")
@@ -620,6 +626,7 @@ def install_nvidia_drivers(reconfigure=True):
     remove_state("containerd.nvidia.missing_package_list")
 
     apt_install(nvidia_packages, fatal=True)
+    _test_gpu_reboot()
 
     set_state("containerd.nvidia.ready")
     if reconfigure:
