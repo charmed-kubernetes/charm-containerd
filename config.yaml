@@ -53,6 +53,11 @@ options:
     default: "auto"
     description: |
       Set a custom containerd runtime.  Set "auto" to select based on hardware.
+  kill_signal:
+    type: string
+    default: "SIGTERM"
+    description: |
+      Set containerd systemd KillSignal.  Options are 
   shim:
     type: string
     default: "containerd-shim"

@@ -721,6 +721,24 @@ def config_changed():
 
 
 @when("containerd.installed")
+@when("config.changed.kill_signal")
+@when_not("endpoint.containerd.departed")
+def render_kill_signal():
+    service_file = "containerd_kill.conf"
+    service_directory = "/etc/systemd/system/containerd.service.d"
+    service_path = os.path.join(service_directory, service_file)
+
+    os.makedirs(service_directory, exist_ok=True)
+
+    log("Applying kill signal, writing new file to {}".format(service_path))
+    context = dict(kill_signal=config().get("kill_signal"))
+    render(service_file, service_path, context)
+
+    check_call(["systemctl", "daemon-reload"])
+    set_state("containerd.restart")
+
+
+@when("containerd.installed")
 @when("containerd.juju-proxy.changed")
 @when_not("endpoint.containerd.departed")
 def proxy_changed():
