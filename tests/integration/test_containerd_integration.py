@@ -218,6 +218,16 @@ async def test_restart_containerd(microbots, ops_test):
         assert pods.stdout.count("microbot") == microbots, f"Ensure {microbots} pod(s) are installed"
         assert pods.stdout.count("Running") == microbots, f"Ensure {microbots} pod(s) are running with containerd down"
 
+        cluster_ip = JujuRunResult(
+            await any_containerd.run(
+                "kubectl --kubeconfig /root/cdk/kubeconfig get service "
+                "-l=app=microbot -ojsonpath='{.items[*].spec.clusterIP}'"
+            )
+        )
+        assert cluster_ip.success, "Failed to get clusterip for microbot service"
+        endpoint = f"http://{cluster_ip.stdout.strip()}"
+        curl = await JujuRunResult(await any_containerd.run(f"curl {endpoint}"))
+        assert curl.success, f"Failed to curl microbot service endpoint {endpoint}"
     finally:
         await containerds.run("service containerd start")
         await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=6 * 60)
