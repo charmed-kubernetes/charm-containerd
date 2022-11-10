@@ -724,6 +724,11 @@ def config_changed():
 @when("config.changed.kill_signal")
 @when_not("endpoint.containerd.departed")
 def render_kill_signal():
+    """
+    Apply new kill-signal settings.
+
+    :return: None
+    """
     service_file = "containerd_kill.conf"
     service_directory = "/etc/systemd/system/containerd.service.d"
     service_path = os.path.join(service_directory, service_file)

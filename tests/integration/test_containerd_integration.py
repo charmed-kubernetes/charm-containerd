@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import shlex
 from pathlib import Path
@@ -181,8 +180,9 @@ async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
         assert "cuda-drivers" in output.stdout, "cuda-drivers not installed"
 
 
-@pytest.fixture
+@pytest.fixture()
 async def microbots(ops_test):
+    """Start microbots workload on each k8s-worker, cleanup at the end of the test."""
     workers = ops_test.model.applications["kubernetes-worker"]
     any_worker = workers.units[0]
     try:
@@ -196,6 +196,7 @@ async def microbots(ops_test):
 
 
 async def test_restart_containerd(microbots, ops_test):
+    """Test microbots continue running while containerd stopped."""
     containerds = ops_test.model.applications["containerd"]
     num_units = len(containerds.units)
     any_containerd = containerds.units[0]
@@ -203,7 +204,7 @@ async def test_restart_containerd(microbots, ops_test):
         results = [await _.run("service containerd stop") for _ in containerds.units]
         results = [JujuRunResult(_) for _ in results]
         assert all(_.success for _ in results), "Failed to stop containerd"
-        
+
         await ops_test.model.wait_for_idle(apps=["containerd"], status="blocked", timeout=6 * 60)
 
         nodes = JujuRunResult(await any_containerd.run("kubectl --kubeconfig /root/cdk/kubeconfig get nodes"))
@@ -211,13 +212,12 @@ async def test_restart_containerd(microbots, ops_test):
         assert nodes.stdout.count("NotReady") == num_units, "Ensure all nodes aren't ready"
 
         # test that pods are still running while containerd is offline
-        pods = JujuRunResult(await any_containerd.run("kubectl --kubeconfig /root/cdk/kubeconfig get pods -l=app=microbot"))
+        pods = JujuRunResult(
+            await any_containerd.run("kubectl --kubeconfig /root/cdk/kubeconfig get pods -l=app=microbot")
+        )
         assert pods.stdout.count("microbot") == microbots, f"Ensure {microbots} pod(s) are installed"
         assert pods.stdout.count("Running") == microbots, f"Ensure {microbots} pod(s) are running with containerd down"
 
     finally:
         await containerds.run("service containerd start")
         await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=6 * 60)
-
-    
-
