@@ -226,7 +226,7 @@ async def test_restart_containerd(microbots, ops_test):
         )
         assert cluster_ip.success, "Failed to get clusterip for microbot service"
         endpoint = f"http://{cluster_ip.stdout.strip()}"
-        curl = await JujuRunResult(await any_containerd.run(f"curl {endpoint}"))
+        curl = JujuRunResult(await any_containerd.run(f"curl {endpoint}"))
         assert curl.success, f"Failed to curl microbot service endpoint {endpoint}"
     finally:
         await containerds.run("service containerd start")
