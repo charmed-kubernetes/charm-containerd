@@ -52,9 +52,9 @@ async def process_elapsed_time(unit, process):
 
 
 @retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(5))
-async def pods_in_state(unit: Unit, selector:Dict[str,str], state: str="Running"):
+async def pods_in_state(unit: Unit, selector: Dict[str, str], state: str = "Running"):
     """Retry checking until the pods all match a specified state."""
-    format=",".join("=".join(pairs) for pairs in selector.items())
+    format = ",".join("=".join(pairs) for pairs in selector.items())
     cmd = f"kubectl --kubeconfig /root/cdk/kubeconfig get pods -l={format} --no-headers"
     result = JujuRunResult(await unit.run(cmd))
     assert result.success, "kubectl returned cleanly"
@@ -204,7 +204,7 @@ async def microbots(ops_test):
         action = await any_worker.run_action("microbot", replicas=len(workers.units))
         action = JujuRunResult(await action.wait())
         assert action.success, "Failed to start microbots"
-        pods = await pods_in_state(any_worker, {"app":"microbot"}, "Running")
+        pods = await pods_in_state(any_worker, {"app": "microbot"}, "Running")
         yield len(pods)
     finally:
         action = await any_worker.run_action("microbot", delete=True)
