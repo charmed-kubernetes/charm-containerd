@@ -1,10 +1,13 @@
 import logging
-import shlex
+from juju.unit import Unit
 from pathlib import Path
 import pytest
-import yaml
+import shlex
 import toml
+from typing import Dict
+from tenacity import retry, stop_after_attempt, wait_exponential
 from utils import JujuRunResult
+import yaml
 
 
 log = logging.getLogger(__name__)
@@ -46,6 +49,18 @@ async def process_elapsed_time(unit, process):
     """Get elasped time of a running process."""
     result = JujuRunResult(await unit.run(f"ps -p `pidof {process}` -o etimes="))
     return int(result.stdout)
+
+
+@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(5))
+async def pods_in_state(unit: Unit, selector:Dict[str,str], state: str="Running"):
+    """Retry checking until the pods all match a specified state."""
+    format=",".join("=".join(pairs) for pairs in selector.items())
+    cmd = f"kubectl --kubeconfig /root/cdk/kubeconfig get pods -l={format} --no-headers"
+    result = JujuRunResult(await unit.run(cmd))
+    assert result.success, "kubectl returned cleanly"
+    pod_set = result.stdout.splitlines()
+    assert pod_set and all(state in line for line in pod_set)
+    return pod_set
 
 
 @pytest.mark.parametrize("which_action", ("containerd", "packages"))
@@ -189,7 +204,8 @@ async def microbots(ops_test):
         action = await any_worker.run_action("microbot", replicas=len(workers.units))
         action = JujuRunResult(await action.wait())
         assert action.success, "Failed to start microbots"
-        yield len(workers.units)
+        pods = await pods_in_state(any_worker, {"app":"microbot"}, "Running")
+        yield len(pods)
     finally:
         action = await any_worker.run_action("microbot", delete=True)
         action = await action.wait()
