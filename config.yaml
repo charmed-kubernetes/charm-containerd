@@ -57,7 +57,8 @@ options:
     type: string
     default: "SIGTERM"
     description: |
-      Set containerd systemd KillSignal.  Options are 
+      Set containerd systemd KillSignal. Options are standard signals from
+      https://man7.org/linux/man-pages/man7/signal.7.html
   shim:
     type: string
     default: "containerd-shim"
