@@ -486,7 +486,7 @@ def publish_version_to_juju():
         return
 
     output = output.decode()
-    ver_re = re.compile(r"\s*Version:\s+([\d\.]+)")
+    ver_re = re.compile(r"\s*Version:\s+v+([\d\.]+)")
     version_matches = set(m.group(1) for m in (ver_re.match(line) for line in output.split("\n")) if m)
     if len(version_matches) != 1:
         return
