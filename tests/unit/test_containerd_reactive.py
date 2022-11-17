@@ -147,7 +147,7 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, ver
     is_state.side_effect = lambda flag: flags[flag]
     config["custom_registries"] = json.dumps(
         [
-            {"url": "my.registry:port", "username": "user", "password": {"interesting":"json"}},
+            {"url": "my.registry:port", "username": "user", "password": {"interesting": "json"}},
             {"url": "my.other.registry", "insecure_skip_verify": True},
         ]
     )
