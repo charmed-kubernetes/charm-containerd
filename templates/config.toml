@@ -72,7 +72,11 @@ oom_score = 0
         {%- if registry.username and registry.password %}
         [plugins.cri.registry.auths."{{ registry.url }}"]
           username = "{{ registry.username }}"
+          {%- if registry.password is mapping %}
+          password = '{{ registry.password | tojson }}'
+          {%- else -%}
           password = "{{ registry.password }}"
+          {%- endif -%}
         {%- endif -%}
       {% endfor %}
       [plugins.cri.registry.configs]

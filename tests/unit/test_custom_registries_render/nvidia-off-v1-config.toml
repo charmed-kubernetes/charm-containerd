@@ -56,7 +56,7 @@ oom_score = 0
       [plugins.cri.registry.auths]
         [plugins.cri.registry.auths."my.registry:port"]
           username = "user"
-          password = "pass"
+          password = '{"interesting": "json"}'
       [plugins.cri.registry.configs]
         [plugins.cri.registry.configs."my.other.registry".tls]
           ca_file   = ""

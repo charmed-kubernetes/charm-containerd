@@ -2,12 +2,21 @@ import contextlib
 import os
 import base64
 import binascii
-import json
 import re
 import traceback
 
+from pydantic import (
+    BaseModel,
+    Json,
+    ValidationError,
+    StrictStr,
+    StrictBool,
+    Extra,
+    PydanticValueError,
+    validator,
+)
 from subprocess import check_call, check_output, CalledProcessError, STDOUT
-from typing import List, Mapping, Optional, Set
+from typing import List, Mapping, Optional, Set, Union
 import urllib.request
 import urllib.error
 
@@ -291,8 +300,46 @@ def insert_docker_io_to_custom_registries(custom_registries):
     return custom_registries
 
 
-class InvalidCustomRegistriesError(Exception):
-    """Error for Invalid Registry decoding."""
+class Registry(BaseModel):
+    """Define the structure of a custom registry."""
+
+    url: StrictStr
+    host: Optional[StrictStr]
+    username: Optional[StrictStr]
+    password: Optional[Union[StrictStr, dict]]
+    ca_file: Optional[StrictStr]
+    cert_file: Optional[StrictStr]
+    key_file: Optional[StrictStr]
+    insecure_skip_verify: Optional[StrictBool]
+
+    class Config:
+        """Forbit any other fields in a custom registry."""
+
+        extra = Extra.forbid
+
+
+class DuplicateError(PydanticValueError):
+    """Defines an error for duplicate hosts in a custom registry."""
+
+    code = "duplicate"
+    msg_template = "host defines {host} more than once at {idx}"
+
+
+class RegistryList(BaseModel):
+    """Definition for a Json String representing a list of custom registries."""
+
+    registries: Json[List[Registry]]
+
+    @validator("registries")
+    def no_duplicate_hosts(cls, v):
+        """Check if any registry in the list is a duplicate."""
+        host_set = set()
+        for idx, registry in enumerate(v):
+            host = registry.host or strip_url(registry.url)
+            if host in host_set:
+                raise DuplicateError(host=host, idx=idx)
+            host_set.add(host)
+        return v
 
 
 def _registries_list(registries, default=None):
@@ -303,20 +350,13 @@ def _registries_list(registries, default=None):
     :param default: if provided, return rather than raising exceptions
     :return: List of registry objects
     """
-    registry_list = default
+    validated = default
     try:
-        registry_list = json.loads(registries)
-    except json.JSONDecodeError:
+        validated = [r.dict() for r in RegistryList(registries=registries).registries]
+    except ValidationError:
         if default is None:
             raise
-
-    if not isinstance(registry_list, list):
-        if default is None:
-            raise InvalidCustomRegistriesError("'{}' is not a list".format(registries))
-        else:
-            return default
-
-    return registry_list
+    return validated
 
 
 def merge_custom_registries(config_directory, custom_registries, old_custom_registries):
@@ -354,50 +394,10 @@ def invalid_custom_registries(custom_registries):
     :rtype: Optional[str]
     """
     try:
-        registries = _registries_list(custom_registries)
-    except json.JSONDecodeError:
+        _registries_list(custom_registries)
+    except ValidationError as e:
         log(traceback.format_exc())
-        return "Failed to decode json string"
-    except InvalidCustomRegistriesError:
-        log(traceback.format_exc())
-        return "custom_registries is not a list"
-
-    required_fields = ["url"]
-    str_fields = [
-        "url",
-        "host",
-        "username",
-        "password",
-        "ca_file",
-        "cert_file",
-        "key_file",
-    ]
-    truthy_fields = [
-        "insecure_skip_verify",
-    ]
-    host_set = set()
-    for idx, registry in enumerate(registries):
-        if not isinstance(registry, dict):
-            return "registry #{} is not in object form".format(idx)
-        for field in required_fields:
-            if field not in registry:
-                return "registry #{} missing required field {}".format(idx, field)
-        for field in required_fields + str_fields:
-            value = registry.get(field)
-            if value and not isinstance(value, str):
-                return "registry #{} field {}={} is not a string".format(idx, field, value)
-        for field in truthy_fields:
-            value = registry.get(field)
-            if field in registry and not isinstance(value, bool):
-                return "registry #{} field {}='{}' is not a boolean".format(idx, field, value)
-        for field in registry:
-            if field not in str_fields + truthy_fields:
-                return "registry #{} field {} may not be specified".format(idx, field)
-
-        this_host = registry.get("host") or strip_url(registry["url"])
-        if this_host in host_set:
-            return "registry #{} defines {} more than once".format(idx, this_host)
-        host_set.add(this_host)
+        return str(e)
 
 
 @hook("update-status")
@@ -714,7 +714,8 @@ def config_changed():
     # validate custom_registries
     invalid_reason = invalid_custom_registries(context["custom_registries"])
     if invalid_reason:
-        status.blocked("Invalid custom_registries: {}".format(invalid_reason))
+        log.error(invalid_reason)
+        status.blocked("Invalid custom_registries: {}".format(invalid_reason.splitlines()[-1]))
         return
 
     context["custom_registries"] = merge_custom_registries(

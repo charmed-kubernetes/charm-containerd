@@ -12,6 +12,7 @@ from charmhelpers.fetch import import_key
 from charms.reactive import is_state, set_state
 from reactive import containerd
 import tempfile
+import pydantic
 import pytest
 
 import jinja2
@@ -33,22 +34,22 @@ def test_series_upgrade():
 @pytest.mark.parametrize(
     "registry_errors",
     [
-        ("", "Failed to decode json string"),
-        ("{}", "custom_registries is not a list"),
-        ("[1]", "registry #0 is not in object form"),
-        ("[{}]", "registry #0 missing required field url"),
-        ('[{"url": 1}]', "registry #0 field url=1 is not a string"),
+        ("", "\n  Invalid JSON (type=value_error.json)"),
+        ("{}", "\n  value is not a valid list (type=type_error.list)"),
+        ("[1]", " -> 0\n  value is not a valid dict (type=type_error.dict)"),
+        ("[{}]", " -> 0 -> url\n  field required (type=value_error.missing)"),
+        ('[{"url": 1}]', " -> 0 -> url\n  str type expected (type=type_error.str)"),
         (
             '[{"url": "", "insecure_skip_verify": "FALSE"}]',
-            "registry #0 field insecure_skip_verify='FALSE' is not a boolean",
+            " -> 0 -> insecure_skip_verify\n  value is not a valid boolean (type=value_error.strictbool)",
         ),
         (
             '[{"url": "", "why-am-i-here": "abc"}]',
-            "registry #0 field why-am-i-here may not be specified",
+            " -> 0 -> why-am-i-here\n  extra fields not permitted (type=value_error.extra)",
         ),
         (
             '[{"url": "https://docker.io"}, {"url": "https://docker.io"}]',
-            "registry #1 defines docker.io more than once",
+            "\n  host defines docker.io more than once at 1 (type=value_error.duplicate; host=docker.io; idx=1)",
         ),
         ("[]", None),
     ],
@@ -66,25 +67,28 @@ def test_series_upgrade():
 )
 def test_invalid_custom_registries(registry_errors):
     """Verify error status for invalid custom registries configurations."""
-    registries, error = registry_errors
-    assert containerd.invalid_custom_registries(registries) == error
+    registries, expected = registry_errors
+    actual = containerd.invalid_custom_registries(registries)
+    if isinstance(expected, str):
+        expected = "1 validation error for RegistryList\nregistries" + expected
+    assert actual == expected
 
 
 def test_registries_list():
     """Verify _registries_list resolves json to a list of objects, or returns default."""
     assert containerd._registries_list("[]") == []
-    assert containerd._registries_list("[{}]") == [{}]
 
     default = []
     assert containerd._registries_list("[{]", default) is default, "return default when invalid json"
     assert containerd._registries_list("{}", default) is default, "return default when valid json isn't a list"
 
-    with pytest.raises(json.JSONDecodeError) as ie:
+    with pytest.raises(pydantic.ValidationError) as ie:
         containerd._registries_list("[{]")
+    assert "Invalid JSON" in str(ie.value)
 
-    with pytest.raises(containerd.InvalidCustomRegistriesError) as ie:
+    with pytest.raises(pydantic.ValidationError) as ie:
         containerd._registries_list("{}")
-    assert "'{}' is not a list" == str(ie.value)
+    assert "is not a valid list" in str(ie.value)
 
 
 def test_merge_custom_registries():
@@ -143,7 +147,7 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, ver
     is_state.side_effect = lambda flag: flags[flag]
     config["custom_registries"] = json.dumps(
         [
-            {"url": "my.registry:port", "username": "user", "password": "pass"},
+            {"url": "my.registry:port", "username": "user", "password": {"interesting":"json"}},
             {"url": "my.other.registry", "insecure_skip_verify": True},
         ]
     )

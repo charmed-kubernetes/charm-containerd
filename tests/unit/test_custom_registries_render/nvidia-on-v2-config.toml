@@ -64,7 +64,7 @@ version = 2
       [plugins."io.containerd.grpc.v1.cri".registry.configs]
         [plugins."io.containerd.grpc.v1.cri".registry.configs."my.registry:port".auth]
           username = "user"
-          password = "pass"
+          password = '{"interesting": "json"}'
         [plugins."io.containerd.grpc.v1.cri".registry.configs."my.other.registry".tls]
           ca_file   = ""
           cert_file = ""
