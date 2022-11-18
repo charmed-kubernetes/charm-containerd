@@ -25,3 +25,54 @@ provides:
   untrusted:
     interface: untrusted-container-runtime
     scope: container
+resources:
+  containerd:
+    type: file
+    filename: containerd.tar.gz
+    description: |-
+      containerd binary release
+      
+      The charm will replace the binaries from
+      the distribution sources with the binaries from 
+      this attached containerd release.
+
+      Container releases can be downloaded from:
+      https://github.com/containerd/containerd/releases
+
+      This tar.gz can either be an arch specific release
+      of containerd or an archive containing 
+      multiple release archives in the top level 
+      with the arch appropriate names.
+
+      ex)
+      juju attach containerd containerd=containerd.tar.gz
+
+      containerd.tar.gz (extracted)
+      └── bin
+          ├── ctr
+          ├── containerd-stress
+          ├── containerd-shim-runc-v2
+          ├── containerd-shim-runc-v1
+          ├── containerd-shim
+          └── containerd
+
+        or
+
+      juju attach containerd containerd=containerd-multiarch.tar.gz
+      containerd-multiarch.tar.gz (extracted)
+      ├── containerd-1.6.10-linux-amd64.tar.gz (extracted)
+      │   └── bin
+      │       ├── ctr
+      │       ├── containerd-stress
+      │       ├── containerd-shim-runc-v2
+      │       ├── containerd-shim-runc-v1
+      │       ├── containerd-shim
+      │       └── containerd
+      └── containerd-1.6.10-linux-arm64.tar.gz (extracted)
+          └── bin
+              ├── ctr
+              ├── containerd-stress
+              ├── containerd-shim-runc-v2
+              ├── containerd-shim-runc-v1
+              ├── containerd-shim
+              └── containerd

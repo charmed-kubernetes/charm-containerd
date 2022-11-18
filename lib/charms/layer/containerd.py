@@ -1,4 +1,64 @@
 from charmhelpers.core import hookenv, unitdata
+from charmhelpers.core.hookenv import resource_get
+from functools import cache
+import os
+from pathlib import Path
+from subprocess import check_call, check_output, CalledProcessError
+from typing import Union
+
+
+@cache
+def arch():
+    return check_output(["dpkg", "--print-architecture"]).decode().strip()
+
+
+class ResourceFailure(Exception):
+    pass
+
+
+def unpack_containerd_resource() -> Union[None, Path]:
+    try:
+        archive = resource_get("containerd")
+    except Exception:
+        return ResourceFailure("Error fetching the containerd resource.")
+
+    if not archive:
+        return ResourceFailure("Missing containerd resource.")
+
+    charm_dir = os.getenv('CHARM_DIR')
+    unpack_path = Path(charm_dir, 'resources', 'containerd')
+    return _unpack_archive(archive, unpack_path)
+
+
+def _unpack_archive(archive, unpack_path):
+    unpack_path.mkdir(exist_ok=True, parents=True)
+    archive = Path(archive)
+    filesize = archive.stat().st_size
+    if filesize == 0:
+        return None
+    if filesize < 10000000:
+        return ResourceFailure("Incomplete containerd resource")
+    check_call(['tar', 'xfz', archive, '-C', unpack_path])
+    return _collect_resource_bins(unpack_path)
+
+
+def _collect_resource_bins(unpack_path):
+    for arch_based in unpack_path.glob("./*.tar.gz"):
+        if arch() in arch_based.name:
+            unpack_path = unpack_path / arch()
+            return _unpack_archive(arch_based, unpack_path)
+    bins = list(unpack_path.glob("bin/*"))
+    if not bins:
+        return ResourceFailure("containerd resource didn't contain any binaries")
+    for bin in bins:
+        if bin.name == "containerd-shim":
+            continue  # containerd-shim cannot run with '-v'
+        try:
+            check_call([bin, "-v"])
+        except CalledProcessError:
+            msg = f"containerd resource binary {bin.name} failed a version check"
+            raise ResourceFailure(msg)
+    return unpack_path / "bin"
 
 
 def get_sandbox_image():

@@ -470,7 +470,30 @@ def install_containerd():
     apt_hold(CONTAINERD_PACKAGE)
 
     set_state("containerd.installed")
+    clear_state("containerd.resource.installed")
     config_changed()
+
+
+@when("containerd.installed")
+@when_not("containerd.resource.installed")
+def install_containerd_resource():
+    try:
+        bin_path = containerd.unpack_containerd_resource()
+    except containerd.ResourceFailure as e:
+        log("An error occurred extracting the resource")
+        log(traceback.format_exc())
+        status.blocked(str(e))
+        return
+
+    if bin_path is None:
+        log("An empty tar.gz resource was providing, using deb sources")
+        set_state("containerd.resource.installed")
+        return
+
+    for bin in bin_path.glob("./*"):
+        check_call(["install", bin, "/usr/bin/"])
+
+    set_state("containerd.resource.installed")
 
 
 @when("containerd.installed")
