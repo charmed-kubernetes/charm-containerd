@@ -9,14 +9,18 @@ from typing import Union
 
 @cache
 def arch():
+    """Determine current machine's arch."""
     return check_output(["dpkg", "--print-architecture"]).decode().strip()
 
 
 class ResourceFailure(Exception):
+    """Custom exception to raise when resource isn't viable."""
+
     pass
 
 
 def unpack_containerd_resource() -> Union[None, Path]:
+    """Unpack containerd resource and provide pathh to parent directory."""
     try:
         archive = resource_get("containerd")
     except Exception:
@@ -25,8 +29,8 @@ def unpack_containerd_resource() -> Union[None, Path]:
     if not archive:
         return ResourceFailure("Missing containerd resource.")
 
-    charm_dir = os.getenv('CHARM_DIR')
-    unpack_path = Path(charm_dir, 'resources', 'containerd')
+    charm_dir = os.getenv("CHARM_DIR")
+    unpack_path = Path(charm_dir, "resources", "containerd")
     return _unpack_archive(archive, unpack_path)
 
 
@@ -38,7 +42,7 @@ def _unpack_archive(archive, unpack_path):
         return None
     if filesize < 10000000:
         return ResourceFailure("Incomplete containerd resource")
-    check_call(['tar', 'xfz', archive, '-C', unpack_path])
+    check_call(["tar", "xfz", archive, "-C", unpack_path])
     return _collect_resource_bins(unpack_path)
 
 

@@ -470,13 +470,14 @@ def install_containerd():
     apt_hold(CONTAINERD_PACKAGE)
 
     set_state("containerd.installed")
-    clear_state("containerd.resource.installed")
+    clear_flag("containerd.resource.installed")
     config_changed()
 
 
 @when("containerd.installed")
 @when_not("containerd.resource.installed")
 def install_containerd_resource():
+    """Unpack containerd resource charm and install over deb binaries."""
     try:
         bin_path = containerd.unpack_containerd_resource()
     except containerd.ResourceFailure as e:
@@ -486,14 +487,13 @@ def install_containerd_resource():
         return
 
     if bin_path is None:
-        log("An empty tar.gz resource was providing, using deb sources")
-        set_state("containerd.resource.installed")
-        return
-
-    for bin in bin_path.glob("./*"):
-        check_call(["install", bin, "/usr/bin/"])
+        log("An empty tar.gz resource was provided, using deb sources")
+    else:
+        for bin in bin_path.glob("./*"):
+            check_call(["install", bin, "/usr/bin/"])
 
     set_state("containerd.resource.installed")
+    set_state("containerd.restart")
 
 
 @when("containerd.installed")
