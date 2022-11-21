@@ -421,6 +421,12 @@ def upgrade_charm():
     # Prevent containerd apt pkg from being implicitly updated.
     apt_hold(CONTAINERD_PACKAGE)
 
+    clear_flag("containerd.resource.installed")
+    if DB.get("containerd-resource-overridden"):
+        # if a resource is currently overriding the deb,
+        # upgrade containerd from the apt packages
+        reinstall_containerd()
+
     # Re-render config in case the template has changed in the new charm.
     config_changed()
 
@@ -491,12 +497,13 @@ def install_containerd_resource():
         status.blocked(str(e))
         return
 
+    DB.set("containerd-resource-overridden", False)
     if bin_path is None:
         log("An empty tar.gz resource was provided, using deb sources")
     else:
         for bin in bin_path.glob("./*"):
             check_call(["install", bin, "/usr/bin/"])
-
+            DB.set("containerd-resource-overridden", True)
     set_state("containerd.resource.installed")
     set_state("containerd.restart")
 

@@ -11,9 +11,10 @@ applications:
     num_units: 
   ##  TEMPORARY FIX FOR PASSING INTEGRATION TESTS
   kubernetes-control-plane:
-    enable-metrics: false
-    controller-manager-extra-args: |-
-      requestheader-client-ca-file=/root/cdk/ca.crt requestheader-allowed-names=system:kube-apiserver,client
+    options:
+      enable-metrics: false
+      controller-manager-extra-args: |-
+        requestheader-client-ca-file=/root/cdk/ca.crt requestheader-allowed-names=system:kube-controller-manager,client
   ################################################
 relations:
 - - docker-registry:docker-registry
