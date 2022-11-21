@@ -132,14 +132,17 @@ register_trigger(when="config.changed.nvidia_apt_packages", clear_flag="containe
 def _check_containerd():
     """
     Check that containerd is running.
+
     `ctr version` calls both client and server side, so is a reasonable indication that everything's been set up
     correctly.
+
     :return: bytes
     """
     try:
         version = check_output(["ctr", "version"])
     except (FileNotFoundError, CalledProcessError):
         return None
+
     return version
 
 
@@ -503,11 +506,13 @@ def install_containerd_resource():
 def publish_version_to_juju():
     """
     Publish the containerd version to Juju.
+
     :return: None
     """
     output = _check_containerd()
     if not output:
         return
+
     output = output.decode()
     ver_re = re.compile(r"\s*Version:\s+v{0,1}([\d\.]+)")
     version_matches = set(m.group(1) for m in (ver_re.match(line) for line in output.split("\n")) if m)
