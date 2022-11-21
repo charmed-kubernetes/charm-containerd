@@ -8,7 +8,7 @@ applications:
   docker-registry:
     charm: docker-registry
     channel: edge
-    num_units: 
+    num_units: 1
   ##  TEMPORARY FIX FOR PASSING INTEGRATION TESTS
   kubernetes-control-plane:
     options:
