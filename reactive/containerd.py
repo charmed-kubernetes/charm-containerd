@@ -473,7 +473,7 @@ def reinstall_containerd():
     """Install and hold containerd with apt."""
     apt_update(fatal=True)
     apt_unhold(CONTAINERD_PACKAGE)
-    apt_install(CONTAINERD_PACKAGE, "--reinstall", fatal=True)
+    apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
     apt_hold(CONTAINERD_PACKAGE)
     set_state("containerd.installed")
     clear_flag("containerd.resource.installed")
