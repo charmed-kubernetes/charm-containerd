@@ -1,13 +1,13 @@
 from charmhelpers.core import hookenv, unitdata
 from charmhelpers.core.hookenv import resource_get
-from functools import cache
+from functools import lru_cache
 import os
 from pathlib import Path
 from subprocess import check_call, check_output, CalledProcessError
 from typing import Union
 
 
-@cache
+@lru_cache
 def arch():
     """Determine current machine's arch."""
     return check_output(["dpkg", "--print-architecture"]).decode().strip()

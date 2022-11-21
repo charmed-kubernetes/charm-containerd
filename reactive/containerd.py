@@ -465,13 +465,18 @@ def install_containerd():
     :return: None
     """
     status.maintenance("Installing containerd via apt")
-    apt_update()
-    apt_install(CONTAINERD_PACKAGE, fatal=True)
-    apt_hold(CONTAINERD_PACKAGE)
+    reinstall_containerd()
+    config_changed()
 
+
+def reinstall_containerd():
+    """Install and hold containerd with apt."""
+    apt_update(fatal=True)
+    apt_unhold(CONTAINERD_PACKAGE)
+    apt_install(CONTAINERD_PACKAGE, "--reinstall", fatal=True)
+    apt_hold(CONTAINERD_PACKAGE)
     set_state("containerd.installed")
     clear_flag("containerd.resource.installed")
-    config_changed()
 
 
 @when("containerd.installed")
