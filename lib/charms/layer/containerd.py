@@ -7,7 +7,7 @@ from subprocess import check_call, check_output, CalledProcessError
 from typing import Union
 
 
-@lru_cache
+@lru_cache()
 def arch():
     """Determine current machine's arch."""
     return check_output(["dpkg", "--print-architecture"]).decode().strip()
