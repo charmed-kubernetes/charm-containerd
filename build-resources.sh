@@ -14,4 +14,5 @@ mkdir "$temp_dir"
     wget $rel_link
  done
 )
-tar -czvf containerd-multiarch.tar.gz -C "${temp_dir}" .
+tar -czvf containerd-multiarch.tgz -C "${temp_dir}" .
+rm -rf "$temp_dir"

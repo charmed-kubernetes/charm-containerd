@@ -28,7 +28,7 @@ provides:
 resources:
   containerd:
     type: file
-    filename: containerd.tar.gz
+    filename: containerd.tgz
     description: |-
       containerd binary release
       

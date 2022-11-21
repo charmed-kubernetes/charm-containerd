@@ -12,15 +12,33 @@ log = logging.getLogger(__name__)
 async def test_build_and_deploy(ops_test):
     """Build and deploy Containerd in bundle."""
     log.info("Build Charm...")
-    charm = await ops_test.build_charm(".")
+    charm = next(Path.cwd().glob("containerd*.charm"), None)
+    if not charm:
+        log.info("Build Charm...")
+        charm = await ops_test.build_charm(".")
 
+    build_script = Path.cwd() / "build-resources.sh"
+    resources = await ops_test.build_resources(build_script, with_sudo=False)
+    expected_resources = {"containerd-multiarch"}
+
+    if resources and all(rsc.stem in expected_resources for rsc in resources):
+        resources = {rsc.stem.replace("-", "_"): rsc for rsc in resources}
+    else:
+        log.info("Failed to build resources, downloading from latest/edge")
+        arch_resources = ops_test.arch_specific_resources(charm)
+        resources = await ops_test.download_resources(charm, resources=arch_resources)
+        resources = {name.replace("-", "_"): rsc for name, rsc in resources.items()}
+
+    assert resources, "Failed to build or download charm resources."
+
+    context = dict(charm=charm, **resources)
     overlays = [
         ops_test.Bundle("kubernetes-core", channel="edge"),
         Path("tests/data/charm.yaml"),
     ]
 
     log.info("Build Bundle...")
-    bundle, *overlays = await ops_test.async_render_bundles(*overlays, charm=charm)
+    bundle, *overlays = await ops_test.async_render_bundles(*overlays, **context)
 
     log.info("Deploy Bundle...")
     model = ops_test.model_full_name

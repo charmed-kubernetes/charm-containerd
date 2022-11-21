@@ -3,6 +3,8 @@ applications:
   containerd:
     charm: {{charm}}
     channel: null
+    resources:
+      containerd: {{containerd_multiarch|default("0")}}
   docker-registry:
     charm: docker-registry
     channel: edge
