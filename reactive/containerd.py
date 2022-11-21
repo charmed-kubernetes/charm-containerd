@@ -501,7 +501,7 @@ def install_containerd_resource():
     set_state("containerd.restart")
 
 
-@when("containerd.installed")
+@when("containerd.resource.installed")
 @when_not("containerd.version-published")
 def publish_version_to_juju():
     """
