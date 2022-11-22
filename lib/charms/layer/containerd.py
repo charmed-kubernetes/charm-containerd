@@ -24,10 +24,10 @@ def unpack_containerd_resource() -> Union[None, Path]:
     try:
         archive = resource_get("containerd")
     except Exception:
-        return ResourceFailure("Error fetching the containerd resource.")
+        raise ResourceFailure("Error fetching the containerd resource.")
 
     if not archive:
-        return ResourceFailure("Missing containerd resource.")
+        raise ResourceFailure("Missing containerd resource.")
 
     charm_dir = os.getenv("CHARM_DIR")
     unpack_path = Path(charm_dir, "resources", "containerd")
@@ -41,7 +41,7 @@ def _unpack_archive(archive, unpack_path):
     if filesize == 0:
         return None
     if filesize < 10000000:
-        return ResourceFailure("Incomplete containerd resource")
+        raise ResourceFailure("Incomplete containerd resource")
     check_call(["tar", "xfz", archive, "-C", unpack_path])
     return _collect_resource_bins(unpack_path)
 
@@ -53,7 +53,7 @@ def _collect_resource_bins(unpack_path):
             return _unpack_archive(arch_based, unpack_path)
     bins = list(unpack_path.glob("bin/*"))
     if not bins:
-        return ResourceFailure("containerd resource didn't contain any binaries")
+        raise ResourceFailure("containerd resource didn't contain any binaries")
     for bin in bins:
         if bin.name == "containerd-shim":
             continue  # containerd-shim cannot run with '-v'
