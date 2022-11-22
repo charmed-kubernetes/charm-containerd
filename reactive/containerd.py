@@ -20,7 +20,6 @@ from charms.reactive import (
     remove_state,
     endpoint_from_flag,
     register_trigger,
-    clear_flag,
 )
 
 from charms.layer import containerd, status
@@ -421,8 +420,8 @@ def upgrade_charm():
     # Prevent containerd apt pkg from being implicitly updated.
     apt_hold(CONTAINERD_PACKAGE)
 
-    clear_flag("containerd.resource.installed")
-    if DB.get("containerd-resource-overridden"):
+    remove_state("containerd.resource.evaluated")
+    if is_state("containerd.resource.installed"):
         # if a resource is currently overriding the deb,
         # upgrade containerd from the apt packages
         reinstall_containerd()
@@ -441,7 +440,7 @@ def upgrade_charm():
             remove_state("containerd.nvidia.ready")
 
     # Update containerd version
-    clear_flag("containerd.version-published")
+    remove_state("containerd.version-published")
 
 
 @when_not("containerd.br_netfilter.enabled")
@@ -482,11 +481,11 @@ def reinstall_containerd():
     apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
     apt_hold(CONTAINERD_PACKAGE)
     set_state("containerd.installed")
-    clear_flag("containerd.resource.installed")
+    remove_state("containerd.resource.evaluated")
 
 
 @when("containerd.installed")
-@when_not("containerd.resource.installed")
+@when_not("containerd.resource.evaluated")
 def install_containerd_resource():
     """Unpack containerd resource charm and install over deb binaries."""
     try:
@@ -497,18 +496,18 @@ def install_containerd_resource():
         status.blocked(str(e))
         return
 
-    DB.set("containerd-resource-overridden", False)
+    remove_state("containerd.resource.installed")
     if bin_path is None:
         log("An empty tar.gz resource was provided, using deb sources")
     else:
         for bin in bin_path.glob("./*"):
             check_call(["install", bin, "/usr/bin/"])
-            DB.set("containerd-resource-overridden", True)
-    set_state("containerd.resource.installed")
+            set_state("containerd.resource.installed")
+    set_state("containerd.resource.evaluated")
     set_state("containerd.restart")
 
 
-@when("containerd.resource.installed")
+@when("containerd.resource.evaluated")
 @when_not("containerd.version-published")
 def publish_version_to_juju():
     """
