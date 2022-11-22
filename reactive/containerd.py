@@ -488,6 +488,7 @@ def reinstall_containerd():
 @when_not("containerd.resource.evaluated")
 def install_containerd_resource():
     """Unpack containerd resource charm and install over deb binaries."""
+    status.maintenance("Unpacking containerd resource")
     try:
         bin_path = containerd.unpack_containerd_resource()
     except containerd.ResourceFailure as e:
@@ -500,6 +501,7 @@ def install_containerd_resource():
     if bin_path is None:
         log("An empty tar.gz resource was provided, using deb sources")
     else:
+        status.maintenance("Installing containerd via resource")
         for bin in bin_path.glob("./*"):
             check_call(["install", bin, "/usr/bin/"])
             set_state("containerd.resource.installed")
