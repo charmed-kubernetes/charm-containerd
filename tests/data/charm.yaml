@@ -13,8 +13,6 @@ applications:
   kubernetes-control-plane:
     options:
       enable-metrics: false
-      controller-manager-extra-args: |-
-        requestheader-client-ca-file=/root/cdk/ca.crt requestheader-allowed-names=system:kube-controller-manager,client
   ################################################
 relations:
 - - docker-registry:docker-registry
