@@ -1,6 +1,7 @@
 import pathlib
 import os
 import json
+from subprocess import CalledProcessError, STDOUT
 import unittest.mock as mock
 from urllib.error import HTTPError
 import yaml
@@ -275,6 +276,7 @@ def test_configure_nvidia_sources(mock_open, fetch_url_text):
 @mock.patch.object(containerd, "config_changed")
 @mock.patch.object(containerd, "configure_nvidia_sources")
 @mock.patch.object(containerd, "unconfigure_nvidia")
+@mock.patch.object(containerd, "_test_gpu_reboot", mock.MagicMock())
 @pytest.mark.usefixtures("default_config")
 def test_install_nvidia_drivers(
     mock_unconfigure_nvidia,
@@ -308,3 +310,51 @@ def test_containerd_version(mock_check, mock_version_set):
     mock_check.return_value = version
     containerd.publish_version_to_juju()
     mock_version_set.assert_called_once_with("1.5.9")
+
+
+@mock.patch.object(containerd, "set_state")
+@mock.patch.object(containerd, "remove_state")
+@mock.patch.object(containerd, "is_state")
+@mock.patch.object(containerd, "check_output")
+@pytest.mark.parametrize(
+    "params",
+    [
+        (False, None),
+        (True, None),
+        (True, CalledProcessError(-1, "nvidia-smi", output=b"just a fatal error")),
+        (True, FileNotFoundError),
+    ],
+    ids=[
+        "nvidia not available",
+        "nvidia-smi returns without exception",
+        "nvidia-smi returns with CalledProcessError (non-reboot exception)",
+        "nvidia-smi returns with FileNotFound",
+    ],
+)
+def test_needs_gpu_reboot_false(check_output, is_state, remove_state, set_state, params):
+    """Verify situations where no gpu induced reboot is needed."""
+    nvidia_available, nvidia_smi_exception = params
+    is_state.return_value = nvidia_available
+    check_output.side_effect = nvidia_smi_exception
+
+    assert not containerd._test_gpu_reboot()
+    if not nvidia_available:
+        check_output.assert_not_called()
+    else:
+        check_output.assert_called_once_with(["nvidia-smi"], stderr=STDOUT)
+    set_state.assert_not_called()
+    remove_state.assert_called_once_with("containerd.nvidia.needs_reboot")
+
+
+@mock.patch.object(containerd, "set_state")
+@mock.patch.object(containerd, "remove_state")
+@mock.patch.object(containerd, "is_state")
+@mock.patch.object(containerd, "check_output")
+def test_needs_gpu_reboot_true(check_output, is_state, remove_state, set_state):
+    """Verify situations where a gpu induced reboot is needed."""
+    is_state.return_value = True
+    check_output.side_effect = CalledProcessError(-1, "nvidia-smi", output=b"Driver/library version mismatch")
+    assert containerd._test_gpu_reboot()
+    check_output.assert_called_once_with(["nvidia-smi"], stderr=STDOUT)
+    set_state.assert_called_once_with("containerd.nvidia.needs_reboot")
+    remove_state.assert_not_called()

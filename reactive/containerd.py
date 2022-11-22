@@ -6,7 +6,7 @@ import json
 import re
 import traceback
 
-from subprocess import check_call, check_output, CalledProcessError
+from subprocess import check_call, check_output, CalledProcessError, STDOUT
 from typing import List, Mapping, Optional, Set
 import urllib.request
 import urllib.error
@@ -20,7 +20,6 @@ from charms.reactive import (
     remove_state,
     endpoint_from_flag,
     register_trigger,
-    clear_flag,
 )
 
 from charms.layer import containerd, status
@@ -170,6 +169,25 @@ def _juju_proxy_changed():
     return True
 
 
+def _test_gpu_reboot() -> bool:
+    reboot = False
+    if is_state("containerd.nvidia.available"):
+        try:
+            check_output(["nvidia-smi"], stderr=STDOUT)
+        except CalledProcessError as cpe:
+            log("Unable to communicate with the NVIDIA driver.")
+            log(cpe)
+            reboot = any(message in cpe.stdout.decode() for message in ["Driver/library version mismatch"])
+        except FileNotFoundError as fne:
+            log("NVIDIA SMI not installed.")
+            log(fne)
+    if reboot:
+        set_state("containerd.nvidia.needs_reboot")
+    else:
+        remove_state("containerd.nvidia.needs_reboot")
+    return reboot
+
+
 @atexit
 def charm_status():
     """
@@ -185,6 +203,8 @@ def charm_status():
         status.blocked("Failed to fetch nvidia_apt_key_urls.")
     elif is_state("containerd.nvidia.missing_package_list"):
         status.blocked("No NVIDIA packages selected to install.")
+    elif is_state("containerd.nvidia.needs_reboot"):
+        status.blocked("May need reboot to activate GPU.")
     elif _check_containerd():
         status.active("Container runtime available")
         set_state("containerd.ready")
@@ -400,6 +420,12 @@ def upgrade_charm():
     # Prevent containerd apt pkg from being implicitly updated.
     apt_hold(CONTAINERD_PACKAGE)
 
+    remove_state("containerd.resource.evaluated")
+    if is_state("containerd.resource.installed"):
+        # if a resource is currently overriding the deb,
+        # upgrade containerd from the apt packages
+        reinstall_containerd()
+
     # Re-render config in case the template has changed in the new charm.
     config_changed()
 
@@ -414,7 +440,7 @@ def upgrade_charm():
             remove_state("containerd.nvidia.ready")
 
     # Update containerd version
-    clear_flag("containerd.version-published")
+    remove_state("containerd.version-published")
 
 
 @when_not("containerd.br_netfilter.enabled")
@@ -444,15 +470,46 @@ def install_containerd():
     :return: None
     """
     status.maintenance("Installing containerd via apt")
-    apt_update()
-    apt_install(CONTAINERD_PACKAGE, fatal=True)
-    apt_hold(CONTAINERD_PACKAGE)
-
-    set_state("containerd.installed")
+    reinstall_containerd()
     config_changed()
 
 
+def reinstall_containerd():
+    """Install and hold containerd with apt."""
+    apt_update(fatal=True)
+    apt_unhold(CONTAINERD_PACKAGE)
+    apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
+    apt_hold(CONTAINERD_PACKAGE)
+    set_state("containerd.installed")
+    remove_state("containerd.resource.evaluated")
+
+
 @when("containerd.installed")
+@when_not("containerd.resource.evaluated")
+def install_containerd_resource():
+    """Unpack containerd resource charm and install over deb binaries."""
+    status.maintenance("Unpacking containerd resource")
+    try:
+        bin_path = containerd.unpack_containerd_resource()
+    except containerd.ResourceFailure as e:
+        log("An error occurred extracting the resource")
+        log(traceback.format_exc())
+        status.blocked(str(e))
+        return
+
+    remove_state("containerd.resource.installed")
+    if bin_path is None:
+        log("An empty tar.gz resource was provided, using deb sources")
+    else:
+        status.maintenance("Installing containerd via resource")
+        for bin in bin_path.glob("./*"):
+            check_call(["install", bin, "/usr/bin/"])
+            set_state("containerd.resource.installed")
+    set_state("containerd.resource.evaluated")
+    set_state("containerd.restart")
+
+
+@when("containerd.resource.evaluated")
 @when_not("containerd.version-published")
 def publish_version_to_juju():
     """
@@ -465,7 +522,7 @@ def publish_version_to_juju():
         return
 
     output = output.decode()
-    ver_re = re.compile(r"\s*Version:\s+([\d\.]+)")
+    ver_re = re.compile(r"\s*Version:\s+v{0,1}([\d\.]+)")
     version_matches = set(m.group(1) for m in (ver_re.match(line) for line in output.split("\n")) if m)
     if len(version_matches) != 1:
         return
@@ -605,6 +662,7 @@ def install_nvidia_drivers(reconfigure=True):
     remove_state("containerd.nvidia.missing_package_list")
 
     apt_install(nvidia_packages, fatal=True)
+    _test_gpu_reboot()
 
     set_state("containerd.nvidia.ready")
     if reconfigure:
