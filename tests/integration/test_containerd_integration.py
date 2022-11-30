@@ -97,6 +97,42 @@ async def test_upgrade_dry_run_action(ops_test, which_action):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
+async def test_upgrade_action_containerd_force(ops_test):
+    """Test running upgrade action without GPU and with force."""
+    unit = ops_test.model.applications["containerd"].units[0]
+    start = await process_elapsed_time(unit, "containerd")
+    action = await unit.run_action("upgrade-packages", **{"force": True})
+    output = await action.wait()  # wait for result
+    assert output.data.get("status") == "completed"
+    results = output.data.get("results", {})
+    log.info(f"Upgrade results = '{results}'")
+    assert results["containerd"]["available"] == results["containerd"]["installed"]
+    assert results["containerd"]["upgrade-available"] == "False"
+    assert not results["containerd"].get("upgrade-completed"), "No upgrade should have been run"
+    end = await process_elapsed_time(unit, "containerd")
+    assert end >= start, "containerd service shouldn't have been restarted"
+
+
+async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test):
+    """Test running GPU force upgrade-action with no GPU drivers installed.
+
+    upgrade-action with `GPU` and `force` flags both set but without GPU drivers currently
+    installed should not upgrade any GPU drivers.
+    """
+    unit = ops_test.model.applications["containerd"].units[0]
+    start = await process_elapsed_time(unit, "containerd")
+    action = await unit.run_action("upgrade-packages", **{"containerd": False, "gpu": True, "force": True})
+    output = await action.wait()  # wait for result
+    assert output.data.get("status") == "completed"
+    results = output.data.get("results", {})
+    log.info(f"Upgrade results = '{results}'")
+    output = await unit.run("dpkg-query --list cuda-drivers")
+    stderr = output.data["results"].get("Stderr")
+    assert "cuda-drivers" in stderr, "cuda-drivers shouldn't be installed"
+    end = await process_elapsed_time(unit, "containerd")
+    assert end >= start, "containerd service shouldn't have been restarted"
+
+
 @pytest.fixture(scope="module")
 async def juju_config(ops_test):
     """Apply configuration for a test, then revert after the test is completed."""
@@ -175,19 +211,6 @@ async def test_containerd_registry_with_private_registry(config_version, ops_tes
         assert docker_registry in registry_unit.workload_status_message
 
 
-async def test_containerd_disable_gpu_support(ops_test, juju_config):
-    """Test that disabling gpu support removes nvidia drivers."""
-    await juju_config("containerd", gpu_driver="none")
-    for unit in ops_test.model.applications["containerd"].units:
-        output = await unit.run("cat /etc/apt/sources.list.d/nvidia.list")
-        stderr = output.data["results"].get("Stderr")
-        assert "No such file " in stderr, "NVIDIA sources list was populated"
-
-        output = await unit.run("dpkg-query --list cuda-drivers")
-        stderr = output.data["results"].get("Stderr")
-        assert "cuda-drivers" in stderr, "cuda-drivers shouldn't be installed"
-
-
 async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
     """Test that enabling gpu support installed nvidia drivers."""
     await juju_config("containerd", gpu_driver="nvidia", _timeout=15 * 60)
@@ -199,3 +222,32 @@ async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
         output = await unit.run("dpkg-query --list cuda-drivers")
         stdout = output.data["results"].get("Stdout")
         assert "cuda-drivers" in stdout, "cuda-drivers not installed"
+
+
+async def test_upgrade_action_gpu_force(ops_test):
+    """Test running upgrade action with GPU and force."""
+    unit = ops_test.model.applications["containerd"].units[0]
+    start = await process_elapsed_time(unit, "containerd")
+    action = await unit.run_action("upgrade-packages", **{"containerd": False, "gpu": True, "force": True})
+    output = await action.wait()  # wait for result
+    assert output.data.get("status") == "completed"
+    results = output.data.get("results", {})
+    log.info(f"Upgrade results = '{results}'")
+    assert results["cuda-drivers"]["available"] == results["cuda-drivers"]["installed"]
+    assert results["cuda-drivers"]["upgrade-available"] == "False"
+    assert results["cuda-drivers"]["upgrade-complete"] == "True"
+    end = await process_elapsed_time(unit, "containerd")
+    assert end >= start, "containerd service shouldn't have been restarted"
+
+
+async def test_containerd_disable_gpu_support(ops_test, juju_config):
+    """Test that disabling gpu support removes nvidia drivers."""
+    await juju_config("containerd", gpu_driver="none")
+    for unit in ops_test.model.applications["containerd"].units:
+        output = await unit.run("cat /etc/apt/sources.list.d/nvidia.list")
+        stderr = output.data["results"].get("Stderr")
+        assert "No such file " in stderr, "NVIDIA sources list was populated"
+
+        output = await unit.run("dpkg-query --list cuda-drivers")
+        stderr = output.data["results"].get("Stderr")
+        assert "cuda-drivers" in stderr, "cuda-drivers shouldn't be installed"
