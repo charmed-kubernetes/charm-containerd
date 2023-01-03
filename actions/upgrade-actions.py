@@ -74,13 +74,17 @@ def _upgrade(containerd, gpu):
         raise ActionError("Must select at-least one of container and gpu")
 
     upgrade_list = _dry_run(containerd, gpu)
+    force_gpu_upgrade = False
     try:
         pkg = CONTAINERD_PACKAGE
         if upgrade_list.get(f"{pkg}.upgrade-available"):
             reinstall_containerd()
             upgrade_list[f"{pkg}.upgrade-complete"] = True
 
-        if any(upgrade_list.get(f"{pkg}.upgrade-available") for pkg in _gpu_packages()):
+        if gpu and action_get().get("force") and is_state("containerd.nvidia.ready"):
+            force_gpu_upgrade = True
+
+        if any(upgrade_list.get(f"{pkg}.upgrade-available") for pkg in _gpu_packages()) or force_gpu_upgrade:
             install_nvidia_drivers(reconfigure=False)
             for pkg in _gpu_packages():
                 upgrade_list[f"{pkg}.upgrade-complete"] = True
