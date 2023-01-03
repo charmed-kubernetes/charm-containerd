@@ -113,10 +113,8 @@ async def test_upgrade_action_containerd_force(ops_test):
     """Test running upgrade action without GPU and with force."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action("upgrade-packages", **{"force": True})
-    output = await action.wait()  # wait for result
-    assert output.data.get("status") == "completed"
-    results = output.data.get("results", {})
+    action = await JujuRun.action(unit, "upgrade-packages", force=True)
+    results = action.results
     log.info(f"Upgrade results = '{results}'")
     assert results["containerd"]["available"] == results["containerd"]["installed"]
     assert results["containerd"]["upgrade-available"] == "False"
@@ -133,14 +131,11 @@ async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test):
     """
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action("upgrade-packages", **{"containerd": False, "gpu": True, "force": True})
-    output = await action.wait()  # wait for result
-    assert output.data.get("status") == "completed"
-    results = output.data.get("results", {})
+    action = await JujuRun.action(unit, "upgrade-packages", containerd=False, gpu=True, force=True)
+    results = action.results
     log.info(f"Upgrade results = '{results}'")
-    output = await unit.run("dpkg-query --list cuda-drivers")
-    stderr = output.data["results"].get("Stderr")
-    assert "cuda-drivers" in stderr, "cuda-drivers shouldn't be installed"
+    action = await JujuRun.command(unit, "dpkg-query --list cuda-drivers", check=False)
+    assert "cuda-drivers" in action.stderr, "cuda-drivers shouldn't be installed"
     end = await process_elapsed_time(unit, "containerd")
     assert end >= start, "containerd service shouldn't have been restarted"
 
@@ -248,7 +243,7 @@ async def test_upgrade_action_gpu_force(ops_test):
     """Test running upgrade action with GPU and force."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await JujuRun.action("upgrade-packages", containerd=False, gpu=True, force=True)
+    action = await JujuRun.action(unit, "upgrade-packages", containerd=False, gpu=True, force=True)
     results = action.results
     log.info(f"Upgrade results = '{results}'")
     assert results["cuda-drivers"]["available"] == results["cuda-drivers"]["installed"]
