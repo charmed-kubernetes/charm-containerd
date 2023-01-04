@@ -48,6 +48,8 @@ options:
     default: "auto"
     description: |
       Override GPU driver installation.  Options are "auto", "nvidia", "none".
+
+      Caution: setting this to nvidia will cause nvidia drivers to be installed on kubernetes-control-plane, even if a GPU is not present.
   runtime:
     type: string
     default: "auto"
