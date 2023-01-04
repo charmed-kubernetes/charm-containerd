@@ -575,6 +575,7 @@ def unconfigure_nvidia(reconfigure=True):
     status.maintenance("Removing NVIDIA drivers.")
 
     nvidia_packages = config("nvidia_apt_packages").split()
+    apt_unhold(nvidia_packages)
     to_purge = apt_packages(nvidia_packages).keys()
 
     if to_purge:
@@ -662,6 +663,8 @@ def install_nvidia_drivers(reconfigure=True):
     remove_state("containerd.nvidia.missing_package_list")
 
     apt_install(nvidia_packages, fatal=True)
+    # Prevent nvidia packages from being automatically updated.
+    apt_hold(nvidia_packages)
     _test_gpu_reboot()
 
     set_state("containerd.nvidia.ready")
