@@ -1,9 +1,14 @@
 import logging
-import shlex
+from juju.unit import Unit
 from pathlib import Path
 import pytest
-import yaml
+import shlex
 import toml
+from typing import Dict
+from tenacity import retry, stop_after_attempt, wait_exponential
+from utils import JujuRun
+import yaml
+
 
 log = logging.getLogger(__name__)
 
@@ -60,8 +65,19 @@ async def test_status_messages(ops_test):
 
 async def process_elapsed_time(unit, process):
     """Get elasped time of a running process."""
-    result = await unit.run(f"ps -p `pidof {process}` -o etimes=")
-    return int(result.data["results"]["Stdout"])
+    result = await JujuRun.command(unit, f"ps -p `pidof {process}` -o etimes=")
+    return int(result.stdout)
+
+
+@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(5))
+async def pods_in_state(unit: Unit, selector: Dict[str, str], state: str = "Running"):
+    """Retry checking until the pods all match a specified state."""
+    format = ",".join("=".join(pairs) for pairs in selector.items())
+    cmd = f"kubectl --kubeconfig /root/cdk/kubeconfig get pods -l={format} --no-headers"
+    result = await JujuRun.command(unit, cmd)
+    pod_set = result.stdout.splitlines()
+    assert pod_set and all(state in line for line in pod_set)
+    return pod_set
 
 
 @pytest.mark.parametrize("which_action", ("containerd", "packages"))
@@ -69,10 +85,8 @@ async def test_upgrade_action(ops_test, which_action):
     """Test running upgrade action."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action(f"upgrade-{which_action}")
-    output = await action.wait()  # wait for result
-    assert output.data.get("status") == "completed"
-    results = output.data.get("results", {})
+    output = await JujuRun.action(unit, f"upgrade-{which_action}")
+    results = output.results
     log.info(f"Upgrade results = '{results}'")
     assert results["containerd"]["available"] == results["containerd"]["installed"]
     assert results["containerd"]["upgrade-available"] == "False"
@@ -86,10 +100,8 @@ async def test_upgrade_dry_run_action(ops_test, which_action):
     """Test running upgrade action in dry-run mode."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action(f"upgrade-{which_action}", **{"dry-run": True})
-    output = await action.wait()  # wait for result
-    assert output.data.get("status") == "completed"
-    results = output.data.get("results", {})
+    output = await JujuRun.action(unit, f"upgrade-{which_action}", **{"dry-run": True})
+    results = output.results
     log.info(f"Upgrade dry-run results = '{results}'")
     assert results["containerd"]["available"] == results["containerd"]["installed"]
     assert results["containerd"]["upgrade-available"] == "False"
@@ -101,10 +113,8 @@ async def test_upgrade_action_containerd_force(ops_test):
     """Test running upgrade action without GPU and with force."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action("upgrade-packages", **{"force": True})
-    output = await action.wait()  # wait for result
-    assert output.data.get("status") == "completed"
-    results = output.data.get("results", {})
+    action = await JujuRun.action(unit, "upgrade-packages", force=True)
+    results = action.results
     log.info(f"Upgrade results = '{results}'")
     assert results["containerd"]["available"] == results["containerd"]["installed"]
     assert results["containerd"]["upgrade-available"] == "False"
@@ -121,14 +131,11 @@ async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test):
     """
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action("upgrade-packages", **{"containerd": False, "gpu": True, "force": True})
-    output = await action.wait()  # wait for result
-    assert output.data.get("status") == "completed"
-    results = output.data.get("results", {})
+    action = await JujuRun.action(unit, "upgrade-packages", containerd=False, gpu=True, force=True)
+    results = action.results
     log.info(f"Upgrade results = '{results}'")
-    output = await unit.run("dpkg-query --list cuda-drivers")
-    stderr = output.data["results"].get("Stderr")
-    assert "cuda-drivers" in stderr, "cuda-drivers shouldn't be installed"
+    action = await JujuRun.command(unit, "dpkg-query --list cuda-drivers", check=False)
+    assert "cuda-drivers" in action.stderr, "cuda-drivers shouldn't be installed"
     end = await process_elapsed_time(unit, "containerd")
     assert end >= start, "containerd service shouldn't have been restarted"
 
@@ -182,10 +189,9 @@ async def config_version(request, juju_config):
 
 async def containerd_config(unit):
     """Gather containerd config and load as a dict from its toml representation."""
-    output = await unit.run("cat /etc/containerd/config.toml")
-    stdout = output.data["results"].get("Stdout")
-    assert stdout, "Containerd output was empty"
-    return toml.loads(stdout)
+    output = await JujuRun.command(unit, "cat /etc/containerd/config.toml")
+    assert output.stdout, "Containerd output was empty"
+    return toml.loads(output.stdout)
 
 
 async def test_containerd_registry_has_dockerio_mirror(config_version, ops_test):
@@ -211,27 +217,34 @@ async def test_containerd_registry_with_private_registry(config_version, ops_tes
         assert docker_registry in registry_unit.workload_status_message
 
 
+async def test_containerd_disable_gpu_support(ops_test, juju_config):
+    """Test that disabling gpu support removes nvidia drivers."""
+    await juju_config("containerd", gpu_driver="none")
+    for unit in ops_test.model.applications["containerd"].units:
+        output = await JujuRun.command(unit, "cat /etc/apt/sources.list.d/nvidia.list", check=False)
+        assert "No such file " in output.stderr, "NVIDIA sources list was populated"
+
+        output = await JujuRun.command(unit, "dpkg-query --list cuda-drivers", check=False)
+        assert "cuda-drivers" in output.stderr, "cuda-drivers shouldn't be installed"
+
+
 async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
     """Test that enabling gpu support installed nvidia drivers."""
     await juju_config("containerd", gpu_driver="nvidia", _timeout=15 * 60)
     for unit in ops_test.model.applications["containerd"].units:
-        output = await unit.run("cat /etc/apt/sources.list.d/nvidia.list")
-        stdout = output.data["results"].get("Stdout")
-        assert stdout, "NVIDIA sources list was empty"
+        output = await JujuRun.command(unit, "cat /etc/apt/sources.list.d/nvidia.list")
+        assert output.stdout, "NVIDIA sources list was empty"
 
-        output = await unit.run("dpkg-query --list cuda-drivers")
-        stdout = output.data["results"].get("Stdout")
-        assert "cuda-drivers" in stdout, "cuda-drivers not installed"
+        output = await JujuRun.command(unit, "dpkg-query --list cuda-drivers")
+        assert "cuda-drivers" in output.stdout, "cuda-drivers not installed"
 
 
 async def test_upgrade_action_gpu_force(ops_test):
     """Test running upgrade action with GPU and force."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
-    action = await unit.run_action("upgrade-packages", **{"containerd": False, "gpu": True, "force": True})
-    output = await action.wait()  # wait for result
-    assert output.data.get("status") == "completed"
-    results = output.data.get("results", {})
+    action = await JujuRun.action(unit, "upgrade-packages", containerd=False, gpu=True, force=True)
+    results = action.results
     log.info(f"Upgrade results = '{results}'")
     assert results["cuda-drivers"]["available"] == results["cuda-drivers"]["installed"]
     assert results["cuda-drivers"]["upgrade-available"] == "False"
@@ -240,14 +253,45 @@ async def test_upgrade_action_gpu_force(ops_test):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-async def test_containerd_disable_gpu_support(ops_test, juju_config):
-    """Test that disabling gpu support removes nvidia drivers."""
-    await juju_config("containerd", gpu_driver="none")
-    for unit in ops_test.model.applications["containerd"].units:
-        output = await unit.run("cat /etc/apt/sources.list.d/nvidia.list")
-        stderr = output.data["results"].get("Stderr")
-        assert "No such file " in stderr, "NVIDIA sources list was populated"
+@pytest.fixture()
+async def microbots(ops_test):
+    """Start microbots workload on each k8s-worker, cleanup at the end of the test."""
+    workers = ops_test.model.applications["kubernetes-worker"]
+    any_worker = workers.units[0]
+    try:
+        await JujuRun.action(any_worker, "microbot", replicas=len(workers.units))
+        pods = await pods_in_state(any_worker, {"app": "microbot"}, "Running")
+        yield len(pods)
+    finally:
+        await JujuRun.action(any_worker, "microbot", delete=True)
 
-        output = await unit.run("dpkg-query --list cuda-drivers")
-        stderr = output.data["results"].get("Stderr")
-        assert "cuda-drivers" in stderr, "cuda-drivers shouldn't be installed"
+
+async def test_restart_containerd(microbots, ops_test):
+    """Test microbots continue running while containerd stopped."""
+    containerds = ops_test.model.applications["containerd"]
+    num_units = len(containerds.units)
+    any_containerd = containerds.units[0]
+    try:
+        [await JujuRun.command(_, "service containerd stop") for _ in containerds.units]
+        await ops_test.model.wait_for_idle(apps=["containerd"], status="blocked", timeout=6 * 60)
+
+        nodes = await JujuRun.command(any_containerd, "kubectl --kubeconfig /root/cdk/kubeconfig get nodes")
+        assert nodes.stdout.count("NotReady") == num_units, "Ensure all nodes aren't ready"
+
+        # test that pods are still running while containerd is offline
+        pods = await JujuRun.command(
+            any_containerd, "kubectl --kubeconfig /root/cdk/kubeconfig get pods -l=app=microbot"
+        )
+        assert pods.stdout.count("microbot") == microbots, f"Ensure {microbots} pod(s) are installed"
+        assert pods.stdout.count("Running") == microbots, f"Ensure {microbots} pod(s) are running with containerd down"
+
+        cluster_ip = await JujuRun.command(
+            any_containerd,
+            "kubectl --kubeconfig /root/cdk/kubeconfig get service "
+            "-l=app=microbot -ojsonpath='{.items[*].spec.clusterIP}'",
+        )
+        endpoint = f"http://{cluster_ip.stdout.strip()}"
+        await JujuRun.command(any_containerd, f"curl {endpoint}")
+    finally:
+        [await JujuRun.command(_, "service containerd start") for _ in containerds.units]
+        await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=6 * 60)
