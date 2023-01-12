@@ -19,6 +19,15 @@ class ResourceFailure(Exception):
     pass
 
 
+def can_mount_cgroup2() -> bool:
+    """Determine if it's possible to mount cgroup2 type filesystems."""
+    try:
+        stdout = check_output(["mount", "-t", "cgroup2"], text=True)
+    except CalledProcessError:
+        return False
+    return "type cgroup2" in stdout
+
+
 def unpack_containerd_resource() -> Union[None, Path]:
     """Unpack containerd resource and provide pathh to parent directory."""
     try:
