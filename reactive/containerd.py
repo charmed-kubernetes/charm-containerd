@@ -730,6 +730,12 @@ def config_changed():
     else:
         template_config = "config.toml"
 
+    # Configure runtime type
+    context["runtime_type"] = "io.containerd.runc.v2"
+
+    if not containerd.can_mount_cgroup2():
+        context["runtime_type"] = "io.containerd.runc.v1"
+
     endpoint = endpoint_from_flag("endpoint.containerd.available")
     if endpoint:
         sandbox_image = endpoint.get_sandbox_image()

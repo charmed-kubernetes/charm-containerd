@@ -1,7 +1,9 @@
-from charmhelpers.core import hookenv, unitdata
-from charmhelpers.core.hookenv import resource_get
-from functools import lru_cache
 import os
+import traceback
+
+from charmhelpers.core import hookenv, unitdata
+from charmhelpers.core.hookenv import resource_get, log
+from functools import lru_cache
 from pathlib import Path
 from subprocess import check_call, check_output, CalledProcessError
 from typing import Union
@@ -17,6 +19,17 @@ class ResourceFailure(Exception):
     """Custom exception to raise when resource isn't viable."""
 
     pass
+
+
+def can_mount_cgroup2() -> bool:
+    """Determine if it's possible to mount cgroup2 type filesystems."""
+    try:
+        stdout = check_output(["mount", "-t", "cgroup2"], text=True)
+    except CalledProcessError:
+        msg = "Failed to find mount type cgroup2\n" + traceback.format_exc()
+        log(msg, level=hookenv.ERROR)
+        return False
+    return "type cgroup2" in stdout
 
 
 def unpack_containerd_resource() -> Union[None, Path]:
