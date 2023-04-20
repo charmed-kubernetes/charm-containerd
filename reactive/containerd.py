@@ -662,7 +662,11 @@ def install_nvidia_drivers(reconfigure=True):
         return
     remove_state("containerd.nvidia.missing_package_list")
 
-    apt_install(nvidia_packages, fatal=True)
+    options = [
+        '--option=Dpkg::Options::=--force-confold',
+        '--no-install-recommends',
+    ]
+    apt_install(nvidia_packages, fatal=True, options=options)
     # Prevent nvidia packages from being automatically updated.
     apt_hold(nvidia_packages)
     _test_gpu_reboot()
