@@ -663,8 +663,8 @@ def install_nvidia_drivers(reconfigure=True):
     remove_state("containerd.nvidia.missing_package_list")
 
     options = [
-        '--option=Dpkg::Options::=--force-confold',
-        '--no-install-recommends',
+        "--option=Dpkg::Options::=--force-confold",
+        "--no-install-recommends",
     ]
     apt_install(nvidia_packages, fatal=True, options=options)
     # Prevent nvidia packages from being automatically updated.
@@ -832,7 +832,6 @@ def proxy_changed():
     service_path = os.path.join(service_directory, service_file)
 
     if context.get("http_proxy") or context.get("https_proxy") or context.get("no_proxy"):
-
         os.makedirs(service_directory, exist_ok=True)
 
         log("Proxy changed, writing new file to {}".format(service_path))
