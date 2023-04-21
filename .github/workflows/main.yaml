@@ -40,7 +40,7 @@ jobs:
           juju-channel: "3.1/stable"
           bootstrap-options: "${{ secrets.JAMMY_BOOTSTRAP_OPTIONS }} --model-default datastore=vsanDatastore --model-default primary-network=VLAN_2763"
       - name: Run integration test
-        run: tox -e integration -- --model-config=.github/data/proxy_config.yaml
+        run: tox -e integration -- --basetemp=/home/ubuntu/pytest --model-config=.github/data/proxy_config.yaml
       - name: Setup Debug Artifact Collection
         if: ${{ failure() }}
         run: mkdir tmp
