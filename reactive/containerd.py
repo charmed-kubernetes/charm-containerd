@@ -564,6 +564,19 @@ def check_for_gpu():
     set_state("containerd.nvidia.checked")
 
 
+def _configured_nvidia_packages():
+    # Workaround for LP#2017175 where cuda-drivers end up depending on
+    # screen-resolution-extra which in focal needs either gnome-shell or policykit-1-gnome
+    # By adding policykit-1-gnome, it fulfills the dependency and doesn't add gnome-shell
+
+    # See also bug on screen-resolution-extra LP#1930937
+    pkgs = set(config("nvidia_apt_packages").split())
+    dist = host.lsb_release()
+    if dist["DISTRIB_CODENAME"].lower() == "focal":
+        pkgs.add("policykit-1-gnome")
+    return list(pkgs)
+
+
 @when("containerd.nvidia.ready")
 @when_not("containerd.nvidia.available")
 def unconfigure_nvidia(reconfigure=True):
@@ -574,7 +587,7 @@ def unconfigure_nvidia(reconfigure=True):
     """
     status.maintenance("Removing NVIDIA drivers.")
 
-    nvidia_packages = config("nvidia_apt_packages").split()
+    nvidia_packages = _configured_nvidia_packages()
     apt_unhold(nvidia_packages)
     to_purge = apt_packages(nvidia_packages).keys()
 
@@ -656,7 +669,7 @@ def install_nvidia_drivers(reconfigure=True):
 
     status.maintenance("Installing NVIDIA drivers.")
     apt_update()
-    nvidia_packages = config("nvidia_apt_packages").split()
+    nvidia_packages = _configured_nvidia_packages()
     if not nvidia_packages:
         set_state("containerd.nvidia.missing_package_list")
         return
