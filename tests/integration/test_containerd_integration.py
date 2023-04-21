@@ -177,7 +177,7 @@ async def juju_config(ops_test):
     for app, (pre_test, settable, timeout) in to_revert.items():
         revert_config = {key: pre_test[key]["value"] for key in settable}
         await ops_test.model.applications[app].set_config(revert_config)
-    await ops_test.model.wait_for_idle(apps=list(to_revert.keys()), status="active", timeout=timeout)
+    await ops_test.model.wait_for_idle(apps=list(to_revert.keys()), status="active")
 
 
 @pytest.fixture(scope="module", params=["v1", "v2"])
