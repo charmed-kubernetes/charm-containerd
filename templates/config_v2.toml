@@ -86,7 +86,7 @@ version = 2
           username = "{{ registry.username }}"
           {%- if registry.password is mapping %}
           password = '{{ registry.password | tojson }}'
-          {%- else -%}
+          {%- else %}
           password = "{{ registry.password }}"
           {%- endif -%}
         {%- endif -%}

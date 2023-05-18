@@ -38,3 +38,4 @@ def test_get_sandbox_image():
     # A related registry should return registry[url]/image
     kv().set("registry", {"url": related_registry})
     assert containerd.get_sandbox_image() == "{}/{}".format(related_registry, image_name)
+    kv().pop("registry")
