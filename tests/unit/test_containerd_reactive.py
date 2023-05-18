@@ -160,6 +160,7 @@ def test_merge_custom_registries(tmp_path):
 @pytest.mark.parametrize("gpu", ("off", "on"), ids=("gpu off", "gpu on"))
 @mock.patch("reactive.containerd.endpoint_from_flag")
 @mock.patch("reactive.containerd.config")
+@mock.patch("charms.layer.containerd.can_mount_cgroup2", mock.Mock(return_value=False))
 def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, version, tmp_path):
     """Verify exact rendering of config.toml files in both v1 and v2 formats."""
 

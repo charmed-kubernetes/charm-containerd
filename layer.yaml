@@ -8,8 +8,10 @@ includes:
   - 'interface:untrusted-container-runtime'
   - 'interface:docker-registry'
 exclude:
+  - .github
   - .coverage
   - .tox
   - __pycache__
   - tests
   - tox.ini
+  - report/

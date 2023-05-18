@@ -46,7 +46,7 @@ version = 2
       {% endif %}
       [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
         [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-          runtime_type = "io.containerd.runc.v1"
+          runtime_type = "{{ runtime_type }}"
       {%- if untrusted %}
         [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.{{ untrusted_name }}]
           runtime_type= "io.containerd.{{ untrusted_name }}.v2"

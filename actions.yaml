@@ -1,6 +1,6 @@
 upgrade-containerd:
     description: |-
-        Force upgrades Containerd to latest repository version
+        Upgrades Containerd to latest repository version
         Deprecated action, instead use
         $ juju run-action --wait containerd/X upgrade-packages --containerd=true
     params:
@@ -13,6 +13,7 @@ upgrade-packages:
     params:
         dry-run:
             type: boolean
+            default: false
             description: Only run a dry-run upgrade and report the available versions.
         containerd:
             type: boolean
@@ -24,3 +25,7 @@ upgrade-packages:
             description: |-
                 Upgrade gpu drivers in the event there are package updates available.
                 Note: gpu drivers are ignored if gpu_support is unecessary
+        force:
+            type: boolean
+            default: false
+            description: Only works if `gpu=true`. Force reinstall the gpu drivers.

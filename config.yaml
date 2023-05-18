@@ -52,11 +52,19 @@ options:
     default: "auto"
     description: |
       Override GPU driver installation.  Options are "auto", "nvidia", "none".
+
+      Caution: setting this to nvidia will cause nvidia drivers to be installed on kubernetes-control-plane, even if a GPU is not present.
   runtime:
     type: string
     default: "auto"
     description: |
       Set a custom containerd runtime.  Set "auto" to select based on hardware.
+  kill_signal:
+    type: string
+    default: "SIGTERM"
+    description: |
+      Set containerd systemd KillSignal. Options are standard signals from
+      https://man7.org/linux/man-pages/man7/signal.7.html
   shim:
     type: string
     default: "containerd-shim"

@@ -1,3 +1,6 @@
+import pytest
+import subprocess
+
 from charmhelpers.core.unitdata import kv
 from charmhelpers.core.hookenv import (
     goal_state as goal,
@@ -6,6 +9,7 @@ from charmhelpers.core.hookenv import (
 )
 
 from charms.layer import containerd
+from unittest import mock
 
 
 def test_get_sandbox_image():
@@ -39,3 +43,25 @@ def test_get_sandbox_image():
     kv().set("registry", {"url": related_registry})
     assert containerd.get_sandbox_image() == "{}/{}".format(related_registry, image_name)
     kv().pop("registry")
+
+
+@mock.patch.object(containerd, "check_output")
+def test_can_mount_cgroup2(mock_check_output):
+    """Verifies the library method `can_mount_cgroup2`."""
+    found = "cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime)"
+    subprocess_failure = subprocess.CalledProcessError(
+        returncode=1, cmd=["mount", "-t", "cgroup2"], stderr="mock error response"
+    )
+
+    mock_check_output.return_value = ""
+    assert not containerd.can_mount_cgroup2()
+
+    mock_check_output.return_value = found
+    assert containerd.can_mount_cgroup2()
+
+    mock_check_output.side_effect = subprocess_failure
+    assert not containerd.can_mount_cgroup2()
+
+    with pytest.raises(FileNotFoundError):
+        mock_check_output.side_effect = FileNotFoundError("mount")
+        containerd.can_mount_cgroup2()

@@ -21,7 +21,6 @@ from charms.reactive import (
     remove_state,
     endpoint_from_flag,
     register_trigger,
-    clear_flag,
 )
 
 from charms.layer import containerd, status
@@ -463,6 +462,12 @@ def upgrade_charm():
     # Prevent containerd apt pkg from being implicitly updated.
     apt_hold(CONTAINERD_PACKAGE)
 
+    remove_state("containerd.resource.evaluated")
+    if is_state("containerd.resource.installed"):
+        # if a resource is currently overriding the deb,
+        # upgrade containerd from the apt packages
+        reinstall_containerd()
+
     # Re-render config in case the template has changed in the new charm.
     config_changed()
 
@@ -477,7 +482,7 @@ def upgrade_charm():
             remove_state("containerd.nvidia.ready")
 
     # Update containerd version
-    clear_flag("containerd.version-published")
+    remove_state("containerd.version-published")
 
 
 @when_not("containerd.br_netfilter.enabled")
@@ -507,15 +512,46 @@ def install_containerd():
     :return: None
     """
     status.maintenance("Installing containerd via apt")
-    apt_update()
-    apt_install(CONTAINERD_PACKAGE, fatal=True)
-    apt_hold(CONTAINERD_PACKAGE)
-
-    set_state("containerd.installed")
+    reinstall_containerd()
     config_changed()
 
 
+def reinstall_containerd():
+    """Install and hold containerd with apt."""
+    apt_update(fatal=True)
+    apt_unhold(CONTAINERD_PACKAGE)
+    apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
+    apt_hold(CONTAINERD_PACKAGE)
+    set_state("containerd.installed")
+    remove_state("containerd.resource.evaluated")
+
+
 @when("containerd.installed")
+@when_not("containerd.resource.evaluated")
+def install_containerd_resource():
+    """Unpack containerd resource charm and install over deb binaries."""
+    status.maintenance("Unpacking containerd resource")
+    try:
+        bin_path = containerd.unpack_containerd_resource()
+    except containerd.ResourceFailure as e:
+        log("An error occurred extracting the resource")
+        log(traceback.format_exc())
+        status.blocked(str(e))
+        return
+
+    remove_state("containerd.resource.installed")
+    if bin_path is None:
+        log("An empty tar.gz resource was provided, using deb sources")
+    else:
+        status.maintenance("Installing containerd via resource")
+        for bin in bin_path.glob("./*"):
+            check_call(["install", bin, "/usr/bin/"])
+            set_state("containerd.resource.installed")
+    set_state("containerd.resource.evaluated")
+    set_state("containerd.restart")
+
+
+@when("containerd.resource.evaluated")
 @when_not("containerd.version-published")
 def publish_version_to_juju():
     """
@@ -528,7 +564,7 @@ def publish_version_to_juju():
         return
 
     output = output.decode()
-    ver_re = re.compile(r"\s*Version:\s+([\d\.]+)")
+    ver_re = re.compile(r"\s*Version:\s+v{0,1}([\d\.]+)")
     version_matches = set(m.group(1) for m in (ver_re.match(line) for line in output.split("\n")) if m)
     if len(version_matches) != 1:
         return
@@ -570,6 +606,19 @@ def check_for_gpu():
     set_state("containerd.nvidia.checked")
 
 
+def _configured_nvidia_packages():
+    # Workaround for LP#2017175 where cuda-drivers end up depending on
+    # screen-resolution-extra which in focal needs either gnome-shell or policykit-1-gnome
+    # By adding policykit-1-gnome, it fulfills the dependency and doesn't add gnome-shell
+
+    # See also bug on screen-resolution-extra LP#1930937
+    pkgs = set(config("nvidia_apt_packages").split())
+    dist = host.lsb_release()
+    if dist["DISTRIB_CODENAME"].lower() == "focal":
+        pkgs.add("policykit-1-gnome")
+    return list(pkgs)
+
+
 @when("containerd.nvidia.ready")
 @when_not("containerd.nvidia.available")
 def unconfigure_nvidia(reconfigure=True):
@@ -580,7 +629,8 @@ def unconfigure_nvidia(reconfigure=True):
     """
     status.maintenance("Removing NVIDIA drivers.")
 
-    nvidia_packages = config("nvidia_apt_packages").split()
+    nvidia_packages = _configured_nvidia_packages()
+    apt_unhold(nvidia_packages)
     to_purge = apt_packages(nvidia_packages).keys()
 
     if to_purge:
@@ -661,13 +711,19 @@ def install_nvidia_drivers(reconfigure=True):
 
     status.maintenance("Installing NVIDIA drivers.")
     apt_update()
-    nvidia_packages = config("nvidia_apt_packages").split()
+    nvidia_packages = _configured_nvidia_packages()
     if not nvidia_packages:
         set_state("containerd.nvidia.missing_package_list")
         return
     remove_state("containerd.nvidia.missing_package_list")
 
-    apt_install(nvidia_packages, fatal=True)
+    options = [
+        "--option=Dpkg::Options::=--force-confold",
+        "--no-install-recommends",
+    ]
+    apt_install(nvidia_packages, fatal=True, options=options)
+    # Prevent nvidia packages from being automatically updated.
+    apt_hold(nvidia_packages)
     _test_gpu_reboot()
 
     set_state("containerd.nvidia.ready")
@@ -733,6 +789,12 @@ def config_changed():
     else:
         template_config = "config.toml"
 
+    # Configure runtime type
+    context["runtime_type"] = "io.containerd.runc.v2"
+
+    if not containerd.can_mount_cgroup2():
+        context["runtime_type"] = "io.containerd.runc.v1"
+
     endpoint = endpoint_from_flag("endpoint.containerd.available")
     if endpoint:
         sandbox_image = endpoint.get_sandbox_image()
@@ -782,6 +844,29 @@ def config_changed():
 
     render(template_config, os.path.join(CONFIG_DIRECTORY, CONFIG_FILE), context)
 
+    set_state("containerd.restart")
+
+
+@when("containerd.installed")
+@when("config.changed.kill_signal")
+@when_not("endpoint.containerd.departed")
+def render_kill_signal():
+    """
+    Apply new kill-signal settings.
+
+    :return: None
+    """
+    service_file = "containerd_kill.conf"
+    service_directory = "/etc/systemd/system/containerd.service.d"
+    service_path = os.path.join(service_directory, service_file)
+
+    os.makedirs(service_directory, exist_ok=True)
+
+    log("Applying kill signal, writing new file to {}".format(service_path))
+    context = dict(kill_signal=config().get("kill_signal"))
+    render(service_file, service_path, context)
+
+    check_call(["systemctl", "daemon-reload"])
     set_state("containerd.restart")
 
 

@@ -10,12 +10,7 @@ from charmhelpers.core.hookenv import (
     config,
 )
 
-from charmhelpers.fetch import (
-    apt_hold,
-    apt_install,
-    apt_update,
-    apt_unhold,
-)
+from charmhelpers.fetch import apt_update
 
 from charmhelpers.fetch.ubuntu_apt_pkg import PkgVersion
 
@@ -23,7 +18,7 @@ from charmhelpers.core.host import service_restart
 
 from charms.reactive import is_state, remove_state
 
-from reactive.containerd import CONTAINERD_PACKAGE, apt_packages, install_nvidia_drivers
+from reactive.containerd import CONTAINERD_PACKAGE, apt_packages, reinstall_containerd, install_nvidia_drivers
 
 
 class ActionError(Exception):
@@ -79,16 +74,17 @@ def _upgrade(containerd, gpu):
         raise ActionError("Must select at-least one of container and gpu")
 
     upgrade_list = _dry_run(containerd, gpu)
+    force_gpu_upgrade = False
     try:
         pkg = CONTAINERD_PACKAGE
         if upgrade_list.get(f"{pkg}.upgrade-available"):
-            apt_update(fatal=True)
-            apt_unhold(pkg)
-            apt_install(pkg, fatal=True)
-            apt_hold(pkg)
+            reinstall_containerd()
             upgrade_list[f"{pkg}.upgrade-complete"] = True
 
-        if any(upgrade_list.get(f"{pkg}.upgrade-available") for pkg in _gpu_packages()):
+        if gpu and action_get().get("force") and is_state("containerd.nvidia.ready"):
+            force_gpu_upgrade = True
+
+        if any(upgrade_list.get(f"{pkg}.upgrade-available") for pkg in _gpu_packages()) or force_gpu_upgrade:
             install_nvidia_drivers(reconfigure=False)
             for pkg in _gpu_packages():
                 upgrade_list[f"{pkg}.upgrade-complete"] = True
