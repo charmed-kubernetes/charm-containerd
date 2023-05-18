@@ -97,7 +97,7 @@ def proxy_env():
     os.environ.update(**restore)  # restore any original values
 
 
-def fetch_url_text(urls) -> typing.List[str | None]:
+def fetch_url_text(urls) -> typing.List[typing.Optional[str]]:
     """Fetch url text within a proxied environment.
 
     returns: None in the event the url yielded no response.
@@ -304,8 +304,9 @@ class Registry:
             optional = field_type is typing.Union and type(None) in field_args
             if not optional and field.name not in value:
                 raise ValidationError("registry #{} missing required field '{}'".format(idx, field.name))
-            if not isinstance(field_value, field.type):
-                allowed_types = [_.__name__ for _ in (field_args or (field.type,))]
+            allowed_types = field_args or (field.type,)
+            if not isinstance(field_value, allowed_types):
+                allowed_types = [_.__name__ for _ in allowed_types]
                 type_hint = ",".join([_ for _ in allowed_types if _ != "NoneType"])
                 raise ValidationError(
                     "registry #{} field {}={} is type {}, not type {}".format(
@@ -317,7 +318,7 @@ class Registry:
             raise ValidationError("registry #{} field {} may not be specified".format(idx, field))
         return cls(**value)
 
-    def _write_tls_content(self, content: str, opt: str, config_directory: str) -> str | None:
+    def _write_tls_content(self, content: str, opt: str, config_directory: str) -> typing.Optional[str]:
         if not content:
             return None
         try:
