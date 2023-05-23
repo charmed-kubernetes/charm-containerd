@@ -1,13 +1,14 @@
 import contextlib
+import dataclasses
 import os
 import base64
 import binascii
 import json
 import re
 import traceback
+import typing
 
 from subprocess import check_call, check_output, CalledProcessError, STDOUT
-from typing import List, Mapping, Optional, Set
 import urllib.request
 import urllib.error
 
@@ -53,7 +54,7 @@ from charmhelpers.fetch.ubuntu_apt_pkg import Package
 NVIDIA_SOURCES_FILE = "/etc/apt/sources.list.d/nvidia.list"
 
 
-def apt_packages(packages: Set[str]) -> Mapping[str, Package]:
+def apt_packages(packages: typing.Set[str]) -> typing.Mapping[str, Package]:
     """Return a mapping of package names to Package classes.
 
     Ignores all packages which aren't available to apt
@@ -96,7 +97,7 @@ def proxy_env():
     os.environ.update(**restore)  # restore any original values
 
 
-def fetch_url_text(urls) -> List[Optional[str]]:
+def fetch_url_text(urls) -> typing.List[typing.Optional[str]]:
     """Fetch url text within a proxied environment.
 
     returns: None in the event the url yielded no response.
@@ -234,47 +235,11 @@ def update_custom_tls_config(config_directory, registries, old_registries):
     """
     # Remove tls files of old registries; so not to leave uneeded, stale files.
     for registry in old_registries:
-        for opt in ["ca", "key", "cert"]:
-            file_b64 = registry.get("%s_file" % opt)
-            if file_b64:
-                registry[opt] = os.path.join(config_directory, "%s.%s" % (strip_url(registry["url"]), opt))
-                if os.path.isfile(registry[opt]):
-                    os.remove(registry[opt])
+        registry.uninstall_tls(config_directory)
 
     # Write tls files of new registries.
     for registry in registries:
-        for opt in ["ca", "key", "cert"]:
-            file_b64 = registry.get("%s_file" % opt)
-            if file_b64:
-                try:
-                    file_contents = base64.b64decode(file_b64)
-                except (binascii.Error, TypeError):
-                    log(traceback.format_exc())
-                    log("{}:{} didn't look like base64 data... skipping".format(registry["url"], opt))
-                    continue
-                registry[opt] = os.path.join(config_directory, "%s.%s" % (strip_url(registry["url"]), opt))
-                with open(registry[opt], "wb") as f:
-                    f.write(file_contents)
-
-
-def populate_host_for_custom_registries(custom_registries):
-    """Populate host field from url if missing for custom registries.
-
-    Examples:
-        url: http://10.10.10.10:8000 --> host: 10.10.10.10:8000
-        url: https://myregistry.io:8000/ --> host: myregistry.io:8000
-        url: myregistry.io:8000 --> host: myregistry.io:8000
-    """
-    # only do minimal changes to custom_registries when conditions apply
-    # otherwise return it directly as it is
-    if isinstance(custom_registries, list):
-        for registry in custom_registries:
-            if not registry.get("host"):
-                url = registry.get("url")
-                if url:
-                    registry["host"] = strip_url(url)
-
-    return custom_registries
+        registry.install_tls(config_directory)
 
 
 def insert_docker_io_to_custom_registries(custom_registries):
@@ -285,16 +250,136 @@ def insert_docker_io_to_custom_registries(custom_registries):
     If a docker.io host entry doesn't exist, we'll add one.
     """
     if isinstance(custom_registries, list):
-        if not any(d.get("host") == "docker.io" for d in custom_registries):
-            custom_registries.insert(0, {"host": "docker.io", "url": "https://registry-1.docker.io"})
+        if not any(d.host == "docker.io" for d in custom_registries):
+            custom_registries.insert(0, Registry(url="https://registry-1.docker.io", host="docker.io"))
     return custom_registries
 
 
-class InvalidCustomRegistriesError(Exception):
-    """Error for Invalid Registry decoding."""
+class ValidationError(Exception):
+    """Defines an error for an invalid custom registry."""
 
 
-def _registries_list(registries, default=None):
+class DuplicateError(ValidationError):
+    """Defines an error for duplicate hosts in a custom registry."""
+
+    code = "duplicate"
+    msg_template = "host defines {host} more than once at {idx}"
+
+
+@dataclasses.dataclass
+class Registry:
+    """Define the structure of a custom registry."""
+
+    url: str
+    host: typing.Union[str, None] = None
+    username: typing.Union[str, None] = None
+    password: typing.Union[str, dict, None] = None
+    ca_file: typing.Union[str, None] = None
+    cert_file: typing.Union[str, None] = None
+    key_file: typing.Union[str, None] = None
+    insecure_skip_verify: typing.Union[bool, None] = None
+
+    ca: typing.Union[str, None] = dataclasses.field(init=False, default=None)
+    cert: typing.Union[str, None] = dataclasses.field(init=False, default=None)
+    key: typing.Union[str, None] = dataclasses.field(init=False, default=None)
+
+    def __post_init__(self):
+        """Populate host field from url if missing.
+
+        Examples:
+            url: http://10.10.10.10:8000 --> host: 10.10.10.10:8000
+            url: https://myregistry.io:8000/ --> host: myregistry.io:8000
+            url: myregistry.io:8000 --> host: myregistry.io:8000
+        """
+        if self.host is None:
+            self.host = strip_url(self.url)
+
+    @classmethod
+    def from_dict(cls, idx: int, value: typing.Mapping[str, typing.Any]):
+        """Build a Registry object from a dict."""
+        for field in dataclasses.fields(cls):
+            field_type = typing.get_origin(field.type)
+            field_args = typing.get_args(field.type)
+            field_value = value.get(field.name)
+            optional = field_type is typing.Union and type(None) in field_args
+            if not optional and field.name not in value:
+                raise ValidationError("registry #{} missing required field '{}'".format(idx, field.name))
+            allowed_types = field_args or (field.type,)
+            if not isinstance(field_value, allowed_types):
+                allowed_types = [_.__name__ for _ in allowed_types]
+                type_hint = ",".join([_ for _ in allowed_types if _ != "NoneType"])
+                raise ValidationError(
+                    "registry #{} field {}={} is type {}, not type {}".format(
+                        idx, field.name, field_value, type(field_value).__name__, type_hint
+                    )
+                )
+        allowed_field_names = {_.name for _ in dataclasses.fields(cls)}
+        for field in value.keys() - allowed_field_names:
+            raise ValidationError("registry #{} field {} may not be specified".format(idx, field))
+        return cls(**value)
+
+    def _write_tls_content(self, content: str, opt: str, config_directory: str) -> typing.Optional[str]:
+        if not content:
+            return None
+        try:
+            file_contents = base64.b64decode(content)
+        except (binascii.Error, TypeError):
+            log(traceback.format_exc())
+            log("{}:{} didn't look like base64 data... skipping".format(self.url, opt))
+            return None
+        file_path = os.path.join(config_directory, "%s.%s" % (self.host, opt))
+        with open(file_path, "wb") as f:
+            f.write(file_contents)
+        return file_path
+
+    def _remove_tls_content(self, opt: str, config_directory: str) -> None:
+        file_path = os.path.join(config_directory, "%s.%s" % (self.host, opt))
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+
+    def install_tls(self, config_directory):
+        """Install tls content onto the file system."""
+        self.ca = self._write_tls_content(self.ca_file, "ca", config_directory)
+        self.key = self._write_tls_content(self.key_file, "key", config_directory)
+        self.cert = self._write_tls_content(self.cert_file, "cert", config_directory)
+
+    def uninstall_tls(self, config_directory):
+        """Remove tls content from the file system."""
+        self.ca = self._remove_tls_content("ca", config_directory)
+        self.key = self._remove_tls_content("key", config_directory)
+        self.cert = self._remove_tls_content("cert", config_directory)
+
+
+@dataclasses.dataclass
+class RegistryList:
+    """Definition for a Json String representing a list of custom registries."""
+
+    registries: typing.List[Registry]
+
+    @classmethod
+    def from_json(cls, value: str):
+        """Build a registry list from json."""
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            raise ValidationError("Failed to decode json string")
+        if not isinstance(parsed, list):
+            raise ValidationError("custom_registries is not a list")
+
+        full_list, host_set = [], set()
+        for idx, registry in enumerate(parsed):
+            if not isinstance(registry, dict):
+                raise ValidationError("registry #{} is not in object form".format(idx))
+            registry = Registry.from_dict(idx, registry)
+
+            if registry.host in host_set:
+                raise DuplicateError("registry #{} defines {} more than once".format(idx, registry.host))
+            host_set.add(registry.host)
+            full_list.append(registry)
+        return cls(full_list)
+
+
+def _registries_list(registries: str, default=None):
     """
     Parse registry config and ensure it returns a list or raises ValueError.
 
@@ -302,20 +387,13 @@ def _registries_list(registries, default=None):
     :param default: if provided, return rather than raising exceptions
     :return: List of registry objects
     """
-    registry_list = default
+    validated = default
     try:
-        registry_list = json.loads(registries)
-    except json.JSONDecodeError:
+        validated = [r for r in RegistryList.from_json(registries).registries]
+    except ValidationError:
         if default is None:
             raise
-
-    if not isinstance(registry_list, list):
-        if default is None:
-            raise InvalidCustomRegistriesError("'{}' is not a list".format(registries))
-        else:
-            return default
-
-    return registry_list
+    return validated
 
 
 def merge_custom_registries(config_directory, custom_registries, old_custom_registries):
@@ -327,18 +405,23 @@ def merge_custom_registries(config_directory, custom_registries, old_custom_regi
     :param str old_custom_registries: old juju config for custom registries
     :return: List Dictionary merged registries
     """
-    registries = []
-    registries += _registries_list(custom_registries, default=[])
-    # json string already converted to python list here
-    registries = populate_host_for_custom_registries(registries)
+    registries = _registries_list(custom_registries, default=[])
     registries = insert_docker_io_to_custom_registries(registries)
     old_registries = []
     if old_custom_registries:
         old_registries += _registries_list(old_custom_registries, default=[])
     update_custom_tls_config(config_directory, registries, old_registries)
 
-    docker_registry = DB.get("registry", None)
-    if docker_registry:
+    db_registry = DB.get("registry", None)
+    if db_registry:
+        ca = db_registry.pop("ca", None)
+        cert = db_registry.pop("cert", None)
+        key = db_registry.pop("key", None)
+        docker_registry = Registry(**db_registry)
+        docker_registry.ca = ca
+        docker_registry.cert = cert
+        docker_registry.key = key
+
         registries.append(docker_registry)
 
     return registries
@@ -353,50 +436,10 @@ def invalid_custom_registries(custom_registries):
     :rtype: Optional[str]
     """
     try:
-        registries = _registries_list(custom_registries)
-    except json.JSONDecodeError:
+        _registries_list(custom_registries)
+    except ValidationError as e:
         log(traceback.format_exc())
-        return "Failed to decode json string"
-    except InvalidCustomRegistriesError:
-        log(traceback.format_exc())
-        return "custom_registries is not a list"
-
-    required_fields = ["url"]
-    str_fields = [
-        "url",
-        "host",
-        "username",
-        "password",
-        "ca_file",
-        "cert_file",
-        "key_file",
-    ]
-    truthy_fields = [
-        "insecure_skip_verify",
-    ]
-    host_set = set()
-    for idx, registry in enumerate(registries):
-        if not isinstance(registry, dict):
-            return "registry #{} is not in object form".format(idx)
-        for field in required_fields:
-            if field not in registry:
-                return "registry #{} missing required field {}".format(idx, field)
-        for field in required_fields + str_fields:
-            value = registry.get(field)
-            if value and not isinstance(value, str):
-                return "registry #{} field {}={} is not a string".format(idx, field, value)
-        for field in truthy_fields:
-            value = registry.get(field)
-            if field in registry and not isinstance(value, bool):
-                return "registry #{} field {}='{}' is not a boolean".format(idx, field, value)
-        for field in registry:
-            if field not in str_fields + truthy_fields:
-                return "registry #{} field {} may not be specified".format(idx, field)
-
-        this_host = registry.get("host") or strip_url(registry["url"])
-        if this_host in host_set:
-            return "registry #{} defines {} more than once".format(idx, this_host)
-        host_set.add(this_host)
+        return str(e)
 
 
 @hook("update-status")
@@ -776,7 +819,8 @@ def config_changed():
     # validate custom_registries
     invalid_reason = invalid_custom_registries(context["custom_registries"])
     if invalid_reason:
-        status.blocked("Invalid custom_registries: {}".format(invalid_reason))
+        log(invalid_reason)
+        status.blocked("Invalid custom_registries: {}".format(invalid_reason.splitlines()[-1]))
         return
 
     context["custom_registries"] = merge_custom_registries(
@@ -942,26 +986,23 @@ def configure_registry():
     """
     registry = endpoint_from_flag("endpoint.docker-registry.ready")
 
-    docker_registry = {
-        "host": strip_url(registry.registry_netloc),
-        "url": registry.registry_netloc,
-    }
+    docker_registry = Registry(url=registry.registry_netloc)
 
     # Handle auth data.
     if registry.has_auth_basic():
-        docker_registry["username"] = registry.basic_user
-        docker_registry["password"] = registry.basic_password
+        docker_registry.username = registry.basic_user
+        docker_registry.password = registry.basic_password
 
     # Handle TLS data.
     if registry.has_tls():
         # Ensure the CA that signed our registry cert is trusted.
         host.install_ca_cert(registry.tls_ca, name="juju-docker-registry")
 
-        docker_registry["ca"] = str(ca_crt_path)
-        docker_registry["key"] = str(server_key_path)
-        docker_registry["cert"] = str(server_crt_path)
+        docker_registry.ca = str(ca_crt_path)
+        docker_registry.key = str(server_key_path)
+        docker_registry.cert = str(server_crt_path)
 
-    DB.set("registry", docker_registry)
+    DB.set("registry", dataclasses.asdict(docker_registry))
 
     config_changed()
     set_state("containerd.registry.configured")

@@ -84,7 +84,11 @@ version = 2
         {%- if registry.username and registry.password %}
         [plugins."io.containerd.grpc.v1.cri".registry.configs."{{ registry.url }}".auth]
           username = "{{ registry.username }}"
+          {%- if registry.password is mapping %}
+          password = '{{ registry.password | tojson }}'
+          {%- else %}
           password = "{{ registry.password }}"
+          {%- endif -%}
         {%- endif -%}
       {% endfor -%}
       {%- for registry in custom_registries %}

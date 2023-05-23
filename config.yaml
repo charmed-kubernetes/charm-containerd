@@ -23,8 +23,12 @@ options:
           e.g.: "url": "http://10.10.10.10:8000" --> "host": "10.10.10.10:8000"
 
       username: OPTIONAL str - default ''
-      password: OPTIONAL str - default ''
+      password: OPTIONAL str|dict - default ''
         Used by containerd for basic authentication to the registry.
+        If a string, will be rendered wrapped as a double-quoted str (password = "my-strong-password")
+        If a dictionary, will be rendered as a single-quoted json (password = '{"my": "json"}')
+        e.g.:  "password": '"$(jq -c . gce.json)"'
+
 
       ca_file: OPTIONAL str - default ''
       cert_file: OPTIONAL str - default ''

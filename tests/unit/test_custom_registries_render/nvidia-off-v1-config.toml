@@ -53,8 +53,13 @@ oom_score = 0
           endpoint = ["my.registry:port"]
         [plugins.cri.registry.mirrors."my.other.registry"]
           endpoint = ["my.other.registry"]
+        [plugins.cri.registry.mirrors."db.registry:5000"]
+          endpoint = ["http://db.registry:5000"]
       [plugins.cri.registry.auths]
         [plugins.cri.registry.auths."my.registry:port"]
+          username = "user"
+          password = '{"interesting": "json"}'
+        [plugins.cri.registry.auths."http://db.registry:5000"]
           username = "user"
           password = "pass"
       [plugins.cri.registry.configs]
@@ -63,6 +68,11 @@ oom_score = 0
           cert_file = ""
           key_file  = ""
           insecure_skip_verify = true
+        [plugins.cri.registry.configs."http://db.registry:5000".tls]
+          ca_file   = "/known/file/path/ca.crt"
+          cert_file = "/known/file/path/cert.crt"
+          key_file  = "/known/file/path/cert.key"
+          insecure_skip_verify = false
     [plugins.cri.x509_key_pair_streaming]
       tls_cert_file = ""
       tls_key_file = ""

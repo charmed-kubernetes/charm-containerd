@@ -30,17 +30,56 @@ def test_series_upgrade():
     containerd.status.blocked.assert_called_once_with("Series upgrade in progress")
 
 
+@mock.patch.object(containerd, "endpoint_from_flag")
+@mock.patch.object(containerd, "ca_crt_path")
+@mock.patch.object(containerd, "server_crt_path")
+@mock.patch.object(containerd, "server_key_path")
+def test_registry_relation(server_key_path, server_crt_path, ca_crt_path, endpoint_from_flag):
+    """Verify writing to the registry db keyvalue store."""
+    mock_registry = endpoint_from_flag.return_value
+    mock_registry.registry_netloc = "http://registry.relation:5000"
+
+    mock_registry.has_auth_basic.return_value = True
+    mock_registry.basic_user = "user"
+    mock_registry.basic_password = "password"
+
+    mock_registry.has_tls.return_value = True
+
+    ca_crt_path.__str__.return_value = "/path/to/ca"
+    server_crt_path.__str__.return_value = "/path/to/crt"
+    server_key_path.__str__.return_value = "/path/to/key"
+
+    with mock.patch.object(containerd, "config_changed") as mock_config_changed:
+        containerd.configure_registry()
+
+    mock_config_changed.assert_called_once_with()
+    set_registry_data = unitdata.kv().get("registry")
+    assert set_registry_data == {
+        "url": "http://registry.relation:5000",
+        "host": "registry.relation:5000",
+        "username": "user",
+        "password": "password",
+        "ca_file": None,
+        "cert_file": None,
+        "key_file": None,
+        "insecure_skip_verify": None,
+        "ca": "/path/to/ca",
+        "cert": "/path/to/crt",
+        "key": "/path/to/key",
+    }
+
+
 @pytest.mark.parametrize(
     "registry_errors",
     [
         ("", "Failed to decode json string"),
         ("{}", "custom_registries is not a list"),
         ("[1]", "registry #0 is not in object form"),
-        ("[{}]", "registry #0 missing required field url"),
-        ('[{"url": 1}]', "registry #0 field url=1 is not a string"),
+        ("[{}]", "registry #0 missing required field 'url'"),
+        ('[{"url": 1}]', "registry #0 field url=1 is type int, not type str"),
         (
             '[{"url": "", "insecure_skip_verify": "FALSE"}]',
-            "registry #0 field insecure_skip_verify='FALSE' is not a boolean",
+            "registry #0 field insecure_skip_verify=FALSE is type str, not type bool",
         ),
         (
             '[{"url": "", "why-am-i-here": "abc"}]',
@@ -66,55 +105,55 @@ def test_series_upgrade():
 )
 def test_invalid_custom_registries(registry_errors):
     """Verify error status for invalid custom registries configurations."""
-    registries, error = registry_errors
-    assert containerd.invalid_custom_registries(registries) == error
+    registries, expected = registry_errors
+    actual = containerd.invalid_custom_registries(registries)
+    assert actual == expected
 
 
 def test_registries_list():
     """Verify _registries_list resolves json to a list of objects, or returns default."""
     assert containerd._registries_list("[]") == []
-    assert containerd._registries_list("[{}]") == [{}]
 
     default = []
     assert containerd._registries_list("[{]", default) is default, "return default when invalid json"
     assert containerd._registries_list("{}", default) is default, "return default when valid json isn't a list"
 
-    with pytest.raises(json.JSONDecodeError) as ie:
+    with pytest.raises(containerd.ValidationError) as ie:
         containerd._registries_list("[{]")
+    assert "Failed to decode json string" in str(ie.value)
 
-    with pytest.raises(containerd.InvalidCustomRegistriesError) as ie:
+    with pytest.raises(containerd.ValidationError) as ie:
         containerd._registries_list("{}")
-    assert "'{}' is not a list" == str(ie.value)
+    assert "is not a list" in str(ie.value)
 
 
-def test_merge_custom_registries():
+def test_merge_custom_registries(tmp_path):
     """Verify merges of registries."""
-    with tempfile.TemporaryDirectory() as dir:
-        config = [
-            {"url": "my.registry:port", "username": "user", "password": "pass"},
-            {
-                "url": "my.other.registry",
-                "ca_file": "aGVsbG8gd29ybGQgY2EtZmlsZQ==",
-                "key_file": "aGVsbG8gd29ybGQga2V5LWZpbGU=",
-                "cert_file": "abc",  # invalid base64 is ignored
-            },
-        ]
-        ctxs = containerd.merge_custom_registries(dir, json.dumps(config), None)
-        with open(os.path.join(dir, "my.other.registry.ca")) as f:
-            assert f.read() == "hello world ca-file"
-        with open(os.path.join(dir, "my.other.registry.key")) as f:
-            assert f.read() == "hello world key-file"
-        assert not os.path.exists(os.path.join(dir, "my.other.registry.cert"))
+    config = [
+        {"url": "my.registry:port", "username": "user", "password": "pass"},
+        {
+            "url": "my.other.registry",
+            "ca_file": "aGVsbG8gd29ybGQgY2EtZmlsZQ==",
+            "key_file": "aGVsbG8gd29ybGQga2V5LWZpbGU=",
+            "cert_file": "abc",  # invalid base64 is ignored
+        },
+    ]
+    ctxs = containerd.merge_custom_registries(tmp_path, json.dumps(config), None)
+    with open(os.path.join(tmp_path, "my.other.registry.ca")) as f:
+        assert f.read() == "hello world ca-file"
+    with open(os.path.join(tmp_path, "my.other.registry.key")) as f:
+        assert f.read() == "hello world key-file"
+    assert not os.path.exists(os.path.join(tmp_path, "my.other.registry.cert"))
 
-        for ctx in ctxs:
-            assert "url" in ctx
+    for ctx in ctxs:
+        assert ctx.url, "url must be assigned"
 
-        # Remove 'my.other.registry' from config
-        new_config = [{"url": "my.registry:port", "username": "user", "password": "pass"}]
-        ctxs = containerd.merge_custom_registries(dir, json.dumps(new_config), json.dumps(config))
-        assert not os.path.exists(os.path.join(dir, "my.other.registry.ca"))
-        assert not os.path.exists(os.path.join(dir, "my.other.registry.key"))
-        assert not os.path.exists(os.path.join(dir, "my.other.registry.cert"))
+    # Remove 'my.other.registry' from config
+    new_config = [{"url": "my.registry:port", "username": "user", "password": "pass"}]
+    ctxs = containerd.merge_custom_registries(tmp_path, json.dumps(new_config), json.dumps(config))
+    assert not os.path.exists(os.path.join(tmp_path, "my.other.registry.ca"))
+    assert not os.path.exists(os.path.join(tmp_path, "my.other.registry.key"))
+    assert not os.path.exists(os.path.join(tmp_path, "my.other.registry.cert"))
 
 
 @pytest.mark.parametrize("version", ("v1", "v2"))
@@ -122,7 +161,7 @@ def test_merge_custom_registries():
 @mock.patch("reactive.containerd.endpoint_from_flag")
 @mock.patch("reactive.containerd.config")
 @mock.patch("charms.layer.containerd.can_mount_cgroup2", mock.Mock(return_value=False))
-def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, version):
+def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, version, tmp_path):
     """Verify exact rendering of config.toml files in both v1 and v2 formats."""
 
     class MockConfig(dict):
@@ -144,18 +183,27 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, ver
     is_state.side_effect = lambda flag: flags[flag]
     config["custom_registries"] = json.dumps(
         [
-            {"url": "my.registry:port", "username": "user", "password": "pass"},
+            {"url": "my.registry:port", "username": "user", "password": {"interesting": "json"}},
             {"url": "my.other.registry", "insecure_skip_verify": True},
         ]
     )
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        with mock.patch("reactive.containerd.CONFIG_DIRECTORY", tmp_dir):
-            containerd.config_changed()
-        f_name = f"nvidia-{gpu}-{version}-config.toml"
-        expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / f_name
-        target = pathlib.Path(tmp_dir) / "config.toml"
-        assert list(target.open()) == list(expected.open())
+    unitdata.kv().set(
+        "registry",
+        {
+            "url": "http://db.registry:5000",
+            "username": "user",
+            "password": "pass",
+            "ca": "/known/file/path/ca.crt",
+            "cert": "/known/file/path/cert.crt",
+            "key": "/known/file/path/cert.key",
+        },
+    )
+    with mock.patch("reactive.containerd.CONFIG_DIRECTORY", tmp_path):
+        containerd.config_changed()
+    f_name = f"nvidia-{gpu}-{version}-config.toml"
+    expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / f_name
+    target = pathlib.Path(tmp_path) / "config.toml"
+    assert target.read_text() == expected.read_text()
 
 
 def test_juju_proxy_changed():
