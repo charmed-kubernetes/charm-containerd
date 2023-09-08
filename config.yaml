@@ -114,7 +114,7 @@ options:
   nvidia_apt_sources:
     type: string
     default: |
-      deb https://nvidia.github.io/libnvidia-container/{id}{version_id}/$(ARCH) /
+      deb https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /
       deb https://nvidia.github.io/nvidia-container-runtime/{id}{version_id}/$(ARCH) /
       deb https://developer.download.nvidia.com/compute/cuda/repos/{id}{version_id_no_dot}/x86_64 /
     description: |
