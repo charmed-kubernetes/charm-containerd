@@ -5,6 +5,8 @@ applications:
     channel: null
     resources:
       containerd: {{containerd_multiarch|default("0")}}
+    options:
+      disable-juju-proxy: "true"
   docker-registry:
     charm: docker-registry
     channel: edge
