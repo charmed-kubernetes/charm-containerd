@@ -635,7 +635,8 @@ def unconfigure_nvidia(reconfigure=True):
     to_purge = apt_packages(nvidia_packages).keys()
 
     if to_purge:
-        apt_purge(to_purge, fatal=True)
+        # remove any other nvidia- installed packages
+        apt_purge(to_purge | {"^nvidia-.*"}, fatal=True)
 
     if os.path.isfile(NVIDIA_SOURCES_FILE):
         os.remove(NVIDIA_SOURCES_FILE)
