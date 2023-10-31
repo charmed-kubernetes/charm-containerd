@@ -170,6 +170,7 @@ def _juju_proxy_changed():
     return True
 
 
+@when("containerd.nvidia.needs_reboot")
 def _test_gpu_reboot() -> bool:
     reboot = False
     if is_state("containerd.nvidia.available"):
