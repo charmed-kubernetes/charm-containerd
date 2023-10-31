@@ -273,7 +273,8 @@ async def test_restart_containerd(microbots, ops_test):
     any_containerd = containerds.units[0]
     try:
         [await JujuRun.command(_, "service containerd stop") for _ in containerds.units]
-        await ops_test.model.wait_for_idle(apps=["containerd"], status="blocked", timeout=6 * 60)
+        async with ops_test.fast_forward():
+            await ops_test.model.wait_for_idle(apps=["containerd"], status="blocked", timeout=6 * 60)
 
         nodes = await JujuRun.command(any_containerd, "kubectl --kubeconfig /root/cdk/kubeconfig get nodes")
         assert nodes.stdout.count("NotReady") == num_units, "Ensure all nodes aren't ready"
@@ -294,4 +295,5 @@ async def test_restart_containerd(microbots, ops_test):
         await JujuRun.command(any_containerd, f"curl {endpoint}")
     finally:
         [await JujuRun.command(_, "service containerd start") for _ in containerds.units]
-        await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=6 * 60)
+        async with ops_test.fast_forward():
+            await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=6 * 60)
