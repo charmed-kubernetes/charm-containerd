@@ -24,7 +24,7 @@ jobs:
     needs:
       - lint-unit
       - call-inclusive-naming-check
-    timeout-minutes: 75
+    timeout-minutes: 90
     steps:
       - name: Check out code
         uses: actions/checkout@v3
