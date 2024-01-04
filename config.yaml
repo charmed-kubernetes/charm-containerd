@@ -129,3 +129,8 @@ options:
     default: "cuda-drivers nvidia-container-runtime"
     description: |
         Space-separated list of APT packages to install when using Nvidia GPUs.
+  device_ownership_from_security_context:
+    type: boolean
+    default: false
+    description: |
+        Opt-in entry to allow non-root containers to use devices.
