@@ -206,6 +206,52 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, ver
     assert target.read_text() == expected.read_text()
 
 
+@pytest.mark.parametrize("device_ownership", (True, False), ids=("device_ownership true", "device_ownership false"))
+@mock.patch("reactive.containerd.endpoint_from_flag")
+@mock.patch("reactive.containerd.config")
+@mock.patch("charms.layer.containerd.can_mount_cgroup2", mock.Mock(return_value=False))
+def test_device_ownership_render(mock_config, mock_endpoint_from_flag, device_ownership, tmp_path):
+    """Verify exact rendering of config.toml files."""
+
+    class MockConfig(dict):
+        def changed(self, *_args, **_kwargs):
+            return False
+
+    def jinja_render(source, target, context):
+        env = jinja2.Environment(loader=jinja2.FileSystemLoader("templates"))
+        template = env.get_template(source)
+        with open(target, "w") as fp:
+            fp.write(template.render(context))
+
+    render.side_effect = jinja_render
+    config = mock_config.return_value = MockConfig(config_version="v2", runtime="runc", device_ownership_from_security_context=device_ownership)
+    mock_endpoint_from_flag.return_value.get_sandbox_image.return_value = "sandbox-image"
+
+    config["custom_registries"] = json.dumps(
+        [
+            {"url": "my.registry:port", "username": "user", "password": {"interesting": "json"}},
+            {"url": "my.other.registry", "insecure_skip_verify": True},
+        ]
+    )
+    unitdata.kv().set(
+        "registry",
+        {
+            "url": "http://db.registry:5000",
+            "username": "user",
+            "password": "pass",
+            "ca": "/known/file/path/ca.crt",
+            "cert": "/known/file/path/cert.crt",
+            "key": "/known/file/path/cert.key",
+        },
+    )
+    with mock.patch("reactive.containerd.CONFIG_DIRECTORY", tmp_path):
+        containerd.config_changed()
+    f_name = f"device-ownership-{device_ownership}-v2-config.toml"
+    expected = pathlib.Path(__file__).parent / "test_custom_registries_render" / f_name
+    target = pathlib.Path(tmp_path) / "config.toml"
+    assert target.read_text() == expected.read_text()
+
+
 def test_juju_proxy_changed():
     """Verify proxy changed bools are set as expected."""
     cached = {"http_proxy": "foo", "https_proxy": "foo", "no_proxy": "foo"}

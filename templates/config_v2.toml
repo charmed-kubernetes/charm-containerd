@@ -35,6 +35,9 @@ version = 2
     systemd_cgroup = false
     enable_tls_streaming = false
     max_container_log_line_size = 16384
+    {%- if device_ownership_from_security_context %}
+    device_ownership_from_security_context = true
+    {%- endif %}
     [plugins."io.containerd.grpc.v1.cri".containerd]
       no_pivot = false
       {%- if runtime.lower() != "runc" %}
