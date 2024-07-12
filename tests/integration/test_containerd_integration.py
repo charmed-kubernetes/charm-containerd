@@ -1,10 +1,13 @@
 import logging
+import jinja2
 from juju.unit import Unit
+from juju.application import Application
 from pathlib import Path
 import pytest
 import shlex
 import toml
 from typing import Dict
+from pytest_operator.plugin import OpsTest
 from tenacity import retry, stop_after_attempt, wait_exponential
 from utils import JujuRun
 import yaml
@@ -254,16 +257,30 @@ async def test_upgrade_action_gpu_force(ops_test):
 
 
 @pytest.fixture()
-async def microbots(ops_test):
+async def microbots(ops_test: OpsTest, tmp_path: Path):
     """Start microbots workload on each k8s-worker, cleanup at the end of the test."""
-    workers = ops_test.model.applications["kubernetes-worker"]
-    any_worker = workers.units[0]
+    workers: Application = ops_test.model.applications["kubernetes-worker"]
+    any_worker: Unit = workers.units[0]
+    arch = any_worker.machine.safe_data["hardware-characteristics"]["arch"]
+
+    context = {
+        "public_address": any_worker.public_address,
+        "replicas": len(workers.units),
+        "arch": arch,
+    }
+    rendered = str(tmp_path / "microbot.yaml")
+    microbot = jinja2.Template(Path("tests/data/microbot.yaml.j2").read_text())
+    microbot.stream(**context).dump(rendered)
+    kubectl = "kubectl --kubeconfig /root/.kube/config {command} -f /tmp/microbot.yaml"
     try:
-        await JujuRun.action(any_worker, "microbot", replicas=len(workers.units))
+        cmd = f"scp {rendered} {any_worker.name}:/tmp/microbot.yaml"
+        await ops_test.juju(*shlex.split(cmd), check=True)
+
+        await JujuRun.command(any_worker, kubectl.format(command="apply"))
         pods = await pods_in_state(any_worker, {"app": "microbot"}, "Running")
         yield len(pods)
     finally:
-        await JujuRun.action(any_worker, "microbot", delete=True)
+        await JujuRun.command(any_worker, kubectl.format(command="delete"))
 
 
 async def test_restart_containerd(microbots, ops_test):
