@@ -5,4 +5,4 @@ __pycache__/
 report/
 *.charm
 build-resources.tmp
-containerd-multiarch.tar.gz
+containerd-multiarch.tgz

@@ -11,6 +11,7 @@ docs: https://discourse.charmhub.io/t/containerd-docs-index/6169
 tags:
   - containers
 series:
+  - noble
   - jammy
   - focal
 subordinate: true
