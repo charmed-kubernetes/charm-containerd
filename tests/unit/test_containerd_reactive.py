@@ -169,7 +169,7 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, ver
             return False
 
     def jinja_render(source, target, context):
-        env = jinja2.Environment(loader=jinja2.FileSystemLoader("templates"))
+        env = jinja2.Environment(loader=jinja2.FileSystemLoader("src/templates"))
         template = env.get_template(source)
         with open(target, "w") as fp:
             fp.write(template.render(context))
@@ -228,7 +228,7 @@ def test_juju_proxy_changed():
 @pytest.fixture()
 def default_config():
     """Mock out the config method from the charm default config."""
-    config_yaml = yaml.safe_load(pathlib.Path("config.yaml").read_bytes())
+    config_yaml = yaml.safe_load(pathlib.Path("src/config.yaml").read_bytes())
     values = {key: obj.get("default") for key, obj in config_yaml["options"].items()}
     with mock.patch.object(containerd, "config", side_effect=values.get) as obj:
         yield obj
