@@ -22,11 +22,13 @@ from reactive.containerd import CONTAINERD_PACKAGE, apt_packages, reinstall_cont
 
 
 class ActionError(Exception):
+    """Exception raised for action errors."""
+
     pass
 
 
 def _gpu_packages():
-    """Returns list of packages required for specific gpu support"""
+    """Return list of packages required for specific gpu support."""
     if is_state("containerd.nvidia.ready"):
         return config("nvidia_apt_packages").split()
     return []
@@ -68,8 +70,7 @@ def _dry_run(containerd, gpu):
 
 
 def _upgrade(containerd, gpu):
-    """Do actual upgrade."""
-
+    """Perform actual upgrade."""
     if not containerd and not gpu:
         raise ActionError("Must select at-least one of container and gpu")
 
@@ -114,6 +115,7 @@ def upgrade_main(containerd, gpu):
 
 
 def main(args):
+    """Begin the upgrade action."""
     action_name = os.path.basename(args[0])
     if action_name == "upgrade-containerd":
         upgrade_main(True, False)

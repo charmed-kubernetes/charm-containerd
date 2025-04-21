@@ -1,0 +1,39 @@
+type: charm
+
+bases:
+  - build-on:
+      - name: ubuntu
+        channel: "22.04"
+        architectures: ["amd64"]
+    run-on:
+      - name: ubuntu
+        channel: "22.04"
+        architectures: ["amd64", "arm64", "s390x"]
+      - name: ubuntu
+        channel: "24.04"
+        architectures: ["amd64", "arm64", "s390x"]
+parts:
+  charm:
+    source: src
+    plugin: reactive
+    override-build: |
+      ./download_layers.sh
+      git -C $CRAFT_PROJECT_DIR rev-parse --short HEAD > $CRAFT_PART_INSTALL/version
+      craftctl default
+    reactive-charm-build-arguments:
+    - --layer-index
+    - 'http://localhost/'  # Fake layer index to force a local build
+    - --debug
+    - --force
+    build-packages:
+    - git
+    - wget
+    - python3-dev
+    build-snaps:
+    - charm/3.x/stable
+    - yq
+    build-environment:
+    - CHARM_LAYERS_DIR: $CRAFT_STAGE/tmp/layers/
+    - CHARM_INTERFACES_DIR: $CRAFT_STAGE/tmp/interfaces/
+    - LAYER_INDEX: https://raw.githubusercontent.com/charmed-kubernetes/layer-index/main/
+    - RELEASE_BRANCH: main
