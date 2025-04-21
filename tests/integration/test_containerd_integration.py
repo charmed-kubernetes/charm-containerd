@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import jinja2
 from juju.unit import Unit
 from juju.application import Application
 from pathlib import Path
 import pytest
+import pytest_asyncio
 import shlex
 import toml
 from typing import Dict
@@ -14,6 +16,11 @@ import yaml
 
 
 log = logging.getLogger(__name__)
+
+
+def K_cmd(cmd: str) -> str:
+    """Return a kubectl command with the kubeconfig path."""
+    return f"kubectl --kubeconfig /root/.kube/config {cmd}"
 
 
 @pytest.mark.abort_on_fail
@@ -76,7 +83,7 @@ async def process_elapsed_time(unit, process):
 async def pods_in_state(unit: Unit, selector: Dict[str, str], state: str = "Running"):
     """Retry checking until the pods all match a specified state."""
     format = ",".join("=".join(pairs) for pairs in selector.items())
-    cmd = f"kubectl --kubeconfig /root/cdk/kubeconfig get pods -l={format} --no-headers"
+    cmd = K_cmd(f"get pods -l={format} --no-headers")
     result = await JujuRun.command(unit, cmd)
     pod_set = result.stdout.splitlines()
     assert pod_set and all(state in line for line in pod_set)
@@ -143,7 +150,7 @@ async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module")
 async def juju_config(ops_test):
     """Apply configuration for a test, then revert after the test is completed."""
 
@@ -183,7 +190,7 @@ async def juju_config(ops_test):
     await ops_test.model.wait_for_idle(apps=list(to_revert.keys()), status="active")
 
 
-@pytest.fixture(scope="module", params=["v1", "v2"])
+@pytest_asyncio.fixture(scope="module", params=["v1", "v2"])
 async def config_version(request, juju_config):
     """Set the containerd config_version based on a parameter."""
     await juju_config("containerd", config_version=request.param)
@@ -256,7 +263,7 @@ async def test_upgrade_action_gpu_force(ops_test):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def microbots(ops_test: OpsTest, tmp_path: Path):
     """Start microbots workload on each k8s-worker, cleanup at the end of the test."""
     workers: Application = ops_test.model.applications["kubernetes-worker"]
@@ -271,7 +278,7 @@ async def microbots(ops_test: OpsTest, tmp_path: Path):
     rendered = str(tmp_path / "microbot.yaml")
     microbot = jinja2.Template(Path("tests/data/microbot.yaml.j2").read_text())
     microbot.stream(**context).dump(rendered)
-    kubectl = "kubectl --kubeconfig /root/.kube/config {command} -f /tmp/microbot.yaml"
+    kubectl = K_cmd("{command} -f /tmp/microbot.yaml")
     try:
         cmd = f"scp {rendered} {any_worker.name}:/tmp/microbot.yaml"
         await ops_test.juju(*shlex.split(cmd), check=True)
@@ -283,34 +290,31 @@ async def microbots(ops_test: OpsTest, tmp_path: Path):
         await JujuRun.command(any_worker, kubectl.format(command="delete"))
 
 
-async def test_restart_containerd(microbots, ops_test):
+async def test_restart_containerd(microbots, ops_test: OpsTest):
     """Test microbots continue running while containerd stopped."""
     containerds = ops_test.model.applications["containerd"]
     num_units = len(containerds.units)
     any_containerd = containerds.units[0]
     try:
-        [await JujuRun.command(_, "service containerd stop") for _ in containerds.units]
+        await asyncio.gather(*(JujuRun.command(_, "service containerd stop") for _ in containerds.units))
         async with ops_test.fast_forward():
             await ops_test.model.wait_for_idle(apps=["containerd"], status="blocked", timeout=6 * 60)
 
-        nodes = await JujuRun.command(any_containerd, "kubectl --kubeconfig /root/cdk/kubeconfig get nodes")
+        nodes = await JujuRun.command(any_containerd, K_cmd("get nodes"))
         assert nodes.stdout.count("NotReady") == num_units, "Ensure all nodes aren't ready"
 
         # test that pods are still running while containerd is offline
-        pods = await JujuRun.command(
-            any_containerd, "kubectl --kubeconfig /root/cdk/kubeconfig get pods -l=app=microbot"
-        )
+        pods = await JujuRun.command(any_containerd, K_cmd("get pods -l=app=microbot"))
         assert pods.stdout.count("microbot") == microbots, f"Ensure {microbots} pod(s) are installed"
         assert pods.stdout.count("Running") == microbots, f"Ensure {microbots} pod(s) are running with containerd down"
 
         cluster_ip = await JujuRun.command(
             any_containerd,
-            "kubectl --kubeconfig /root/cdk/kubeconfig get service "
-            "-l=app=microbot -ojsonpath='{.items[*].spec.clusterIP}'",
+            K_cmd("get service -l=app=microbot -ojsonpath='{.items[*].spec.clusterIP}'"),
         )
         endpoint = f"http://{cluster_ip.stdout.strip()}"
         await JujuRun.command(any_containerd, f"curl {endpoint}")
     finally:
-        [await JujuRun.command(_, "service containerd start") for _ in containerds.units]
+        await asyncio.gather(*(JujuRun.command(_, "service containerd start") for _ in containerds.units))
         async with ops_test.fast_forward():
             await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=6 * 60)
