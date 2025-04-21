@@ -18,7 +18,7 @@ import yaml
 log = logging.getLogger(__name__)
 
 
-def K_cmd(cmd: str) -> str:
+def format_kubectl_cmd(cmd: str) -> str:
     """Return a kubectl command with the kubeconfig path."""
     return f"kubectl --kubeconfig /root/.kube/config {cmd}"
 
@@ -83,7 +83,7 @@ async def process_elapsed_time(unit, process):
 async def pods_in_state(unit: Unit, selector: Dict[str, str], state: str = "Running"):
     """Retry checking until the pods all match a specified state."""
     format = ",".join("=".join(pairs) for pairs in selector.items())
-    cmd = K_cmd(f"get pods -l={format} --no-headers")
+    cmd = format_kubectl_cmd(f"get pods -l={format} --no-headers")
     result = await JujuRun.command(unit, cmd)
     pod_set = result.stdout.splitlines()
     assert pod_set and all(state in line for line in pod_set)
@@ -278,7 +278,7 @@ async def microbots(ops_test: OpsTest, tmp_path: Path):
     rendered = str(tmp_path / "microbot.yaml")
     microbot = jinja2.Template(Path("tests/data/microbot.yaml.j2").read_text())
     microbot.stream(**context).dump(rendered)
-    kubectl = K_cmd("{command} -f /tmp/microbot.yaml")
+    kubectl = format_kubectl_cmd("{command} -f /tmp/microbot.yaml")
     try:
         cmd = f"scp {rendered} {any_worker.name}:/tmp/microbot.yaml"
         await ops_test.juju(*shlex.split(cmd), check=True)
@@ -300,17 +300,17 @@ async def test_restart_containerd(microbots, ops_test: OpsTest):
         async with ops_test.fast_forward():
             await ops_test.model.wait_for_idle(apps=["containerd"], status="blocked", timeout=6 * 60)
 
-        nodes = await JujuRun.command(any_containerd, K_cmd("get nodes"))
+        nodes = await JujuRun.command(any_containerd, format_kubectl_cmd("get nodes"))
         assert nodes.stdout.count("NotReady") == num_units, "Ensure all nodes aren't ready"
 
         # test that pods are still running while containerd is offline
-        pods = await JujuRun.command(any_containerd, K_cmd("get pods -l=app=microbot"))
+        pods = await JujuRun.command(any_containerd, format_kubectl_cmd("get pods -l=app=microbot"))
         assert pods.stdout.count("microbot") == microbots, f"Ensure {microbots} pod(s) are installed"
         assert pods.stdout.count("Running") == microbots, f"Ensure {microbots} pod(s) are running with containerd down"
 
         cluster_ip = await JujuRun.command(
             any_containerd,
-            K_cmd("get service -l=app=microbot -ojsonpath='{.items[*].spec.clusterIP}'"),
+            format_kubectl_cmd("get service -l=app=microbot -ojsonpath='{.items[*].spec.clusterIP}'"),
         )
         endpoint = f"http://{cluster_ip.stdout.strip()}"
         await JujuRun.command(any_containerd, f"curl {endpoint}")
