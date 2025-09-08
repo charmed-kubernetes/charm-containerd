@@ -922,6 +922,7 @@ def restart_containerd():
     status.maintenance("Restarting containerd")
     if host.service_restart("containerd.service"):
         remove_state("containerd.restart")
+        remove_state("containerd.version-published")
     else:
         log("Failed to restart containerd; will retry")
 
