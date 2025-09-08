@@ -317,7 +317,6 @@ def test_configure_nvidia_sources(mock_open, fetch_url_text):
     mock_file = mock_open.return_value.__enter__()
     mock_file.write.assert_called_once_with(
         "deb https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /\n"
-        "deb https://nvidia.github.io/nvidia-container-runtime/ubuntu20.04/$(ARCH) /\n"
         "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64 /"
     )
 

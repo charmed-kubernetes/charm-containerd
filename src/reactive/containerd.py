@@ -654,7 +654,7 @@ def unconfigure_nvidia(reconfigure=True):
 def configure_nvidia_sources():
     """Configure NVIDIA repositories based on charm config.
 
-    :return: bool - True if successufully fetched
+    :return: bool - True if successfully fetched
     """
     status.maintenance("Configuring NVIDIA repositories.")
 
