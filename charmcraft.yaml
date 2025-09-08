@@ -36,4 +36,4 @@ parts:
     - CHARM_LAYERS_DIR: $CRAFT_STAGE/tmp/layers/
     - CHARM_INTERFACES_DIR: $CRAFT_STAGE/tmp/interfaces/
     - LAYER_INDEX: https://raw.githubusercontent.com/charmed-kubernetes/layer-index/main/
-    - RELEASE_BRANCH: main
+    - RELEASE_BRANCH: release_1.33
