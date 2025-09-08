@@ -68,8 +68,8 @@ def _collect_resource_bins(unpack_path):
     if not bins:
         raise ResourceFailure("containerd resource didn't contain any binaries")
     for bin in bins:
-        if bin.name == "containerd-shim":
-            continue  # containerd-shim cannot run with '-v'
+        if bin.name in ["containerd-shim", "containerd-stress"]:
+            continue  # applications which cannot run with '-v'
         try:
             check_call([bin, "-v"])
         except CalledProcessError:
