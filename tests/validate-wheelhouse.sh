@@ -3,7 +3,10 @@ set -eux
 
 build_dir="$(mktemp -d --tmpdir=${TOX_ENV_DIR}/tmp)"
 charm="$(egrep '^name\S*:' ./metadata.yaml | awk '{ print $2 }')"
-function cleanup { rm -rf "$build_dir"; }
+function cleanup {
+    ls -l "$build_dir/$charm/wheelhouse" || true
+    rm -rf "$build_dir";
+}
 trap cleanup EXIT
 
 charm-build src --build-dir "$build_dir" --debug
