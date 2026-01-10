@@ -249,6 +249,7 @@ async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
         assert "cuda-drivers" in output.stdout, "cuda-drivers not installed"
 
 
+@pytest.mark.xfail(reason="No apt repo for nvidia-container-runtime")
 async def test_upgrade_action_gpu_force(ops_test):
     """Test running upgrade action with GPU and force."""
     unit = ops_test.model.applications["containerd"].units[0]
