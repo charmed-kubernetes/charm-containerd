@@ -52,6 +52,7 @@ from charmhelpers.fetch import (
 from charmhelpers.fetch.ubuntu_apt_pkg import Package
 
 NVIDIA_SOURCES_FILE = "/etc/apt/sources.list.d/nvidia.list"
+NEEDRESTART_SUSPEND = "NEEDRESTART_SUSPEND"
 
 
 def apt_packages(packages: typing.Set[str]) -> typing.Mapping[str, Package]:
@@ -526,22 +527,21 @@ def _apt_restart_services(restart: bool):
     """
     Context manager to conditionally restart services after apt operations.
 
-    Args:
-        restart: whether to restart services after apt operations
+    :param bool restart: whether to restart services after apt operations
     """
-    original = os.environ.get("NEEDRESTART_SUSPEND")
-    log("Services will {}be restarted after apt operations.".format("" if restart else "not "))
+    env = NEEDRESTART_SUSPEND
+    original = os.environ.pop(env, None)
+    log(f"Services will {'' if restart else 'not '}be restarted after apt operations.")
     if not restart:
-        os.environ.update({"NEEDRESTART_SUSPEND": "1"})
-    else:
-        os.environ.pop("NEEDRESTART_SUSPEND", None)
+        os.environ.update({env: "1"})
+
     try:
         yield
     finally:
         if original is None:
-            os.environ.pop("NEEDRESTART_SUSPEND", None)
+            os.environ.pop(env, None)
         else:
-            os.environ["NEEDRESTART_SUSPEND"] = original
+            os.environ[env] = original
 
 
 def reinstall_containerd(restart: bool = True):

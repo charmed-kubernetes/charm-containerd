@@ -414,8 +414,8 @@ def test_needs_gpu_reboot_true(check_output, is_state, remove_state, set_state):
     [
         (True, {}, None, None),
         (False, {}, "1", None),
-        (True, {"NEEDRESTART_SUSPEND": "original"}, None, "original"),
-        (False, {"NEEDRESTART_SUSPEND": "original"}, "1", "original"),
+        (True, {containerd.NEEDRESTART_SUSPEND: "original"}, None, "original"),
+        (False, {containerd.NEEDRESTART_SUSPEND: "original"}, "1", "original"),
     ],
     ids=[
         "restart=True, no initial env",
@@ -430,19 +430,20 @@ def test_apt_restart_services(mock_log, restart, initial_env, expected_during, e
     """Verify _apt_restart_services behavior with various configurations."""
     # Setup initial environment from parameters
     os.environ.update(initial_env)
+    env_var = containerd.NEEDRESTART_SUSPEND
 
     with containerd._apt_restart_services(restart=restart):
         # Check value during context
         if expected_during is None:
-            assert "NEEDRESTART_SUSPEND" not in os.environ
+            assert env_var not in os.environ
         else:
-            assert os.environ["NEEDRESTART_SUSPEND"] == expected_during
+            assert os.environ[env_var] == expected_during
 
     # Check value after context
     if expected_after is None:
-        assert "NEEDRESTART_SUSPEND" not in os.environ
+        assert env_var not in os.environ
     else:
-        assert os.environ["NEEDRESTART_SUSPEND"] == expected_after
+        assert os.environ[env_var] == expected_after
 
     # Check log call
     log_fmt = "" if restart else "not "
