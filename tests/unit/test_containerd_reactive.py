@@ -410,12 +410,12 @@ def test_needs_gpu_reboot_true(check_output, is_state, remove_state, set_state):
 
 
 @pytest.mark.parametrize(
-    "restart,initial_env,expected_during,expected_after,log_called",
+    "restart,initial_env,expected_during,expected_after",
     [
-        (True, {}, None, None, False),
-        (False, {}, "1", "1", True),
-        (True, {"NEEDRESTART_SUSPEND": "original_value"}, None, "original_value", False),
-        (False, {"NEEDRESTART_SUSPEND": "original_value"}, "1", "original_value", True),
+        (True, {}, None, None),
+        (False, {}, "1", None),
+        (True, {"NEEDRESTART_SUSPEND": "original"}, None, "original"),
+        (False, {"NEEDRESTART_SUSPEND": "original"}, "1", "original"),
     ],
     ids=[
         "restart=True, no initial env",
@@ -426,7 +426,7 @@ def test_needs_gpu_reboot_true(check_output, is_state, remove_state, set_state):
 )
 @mock.patch.object(containerd, "log")
 @mock.patch.dict(os.environ, {}, clear=True)
-def test_apt_restart_services(mock_log, restart, initial_env, expected_during, expected_after, log_called):
+def test_apt_restart_services(mock_log, restart, initial_env, expected_during, expected_after):
     """Verify _apt_restart_services behavior with various configurations."""
     # Setup initial environment from parameters
     os.environ.update(initial_env)
@@ -445,7 +445,5 @@ def test_apt_restart_services(mock_log, restart, initial_env, expected_during, e
         assert os.environ["NEEDRESTART_SUSPEND"] == expected_after
 
     # Check log call
-    if log_called:
-        mock_log.assert_called_once_with("Services will be not restarted after apt operations.")
-    else:
-        mock_log.assert_not_called()
+    log_fmt = "" if restart else "not "
+    mock_log.assert_called_once_with(f"Services will {log_fmt}be restarted after apt operations.")

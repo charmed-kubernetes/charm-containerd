@@ -526,15 +526,22 @@ def _apt_restart_services(restart: bool):
     """
     Context manager to conditionally restart services after apt operations.
 
-    :param restart: whether to restart services after apt operations
+    Args:
+        restart: whether to restart services after apt operations
     """
-    restore = os.environ.pop("NEEDRESTART_SUSPEND", None)
+    original = os.environ.get("NEEDRESTART_SUSPEND")
+    log("Services will {}be restarted after apt operations.".format("" if restart else "not "))
     if not restart:
-        log("Services will be not restarted after apt operations.")
         os.environ.update({"NEEDRESTART_SUSPEND": "1"})
-    yield
-    if restore is not None:
-        os.environ["NEEDRESTART_SUSPEND"] = restore
+    else:
+        os.environ.pop("NEEDRESTART_SUSPEND", None)
+    try:
+        yield
+    finally:
+        if original is None:
+            os.environ.pop("NEEDRESTART_SUSPEND", None)
+        else:
+            os.environ["NEEDRESTART_SUSPEND"] = original
 
 
 def reinstall_containerd(restart: bool = True):
