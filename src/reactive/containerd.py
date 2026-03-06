@@ -468,7 +468,10 @@ def upgrade_charm():
     if is_state("containerd.resource.installed"):
         # if a resource is currently overriding the deb,
         # upgrade containerd from the apt packages
-        reinstall_containerd()
+        # to make sure we get latest systemd services, latest configs,
+        # and dependencies like runc if needed -- but don't restart into
+        # those services
+        reinstall_containerd(restart=False)
 
     # Re-render config in case the template has changed in the new charm.
     config_changed()
@@ -518,11 +521,28 @@ def install_containerd():
     config_changed()
 
 
-def reinstall_containerd():
+@contextlib.contextmanager
+def _apt_restart_services(restart: bool):
+    """
+    Context manager to conditionally restart services after apt operations.
+
+    :param restart: whether to restart services after apt operations
+    """
+    restore = os.environ.pop("NEEDRESTART_SUSPEND", None)
+    if not restart:
+        log("Services will be not restarted after apt operations.")
+        os.environ.update({"NEEDRESTART_SUSPEND": "1"})
+    yield
+    if restore is not None:
+        os.environ["NEEDRESTART_SUSPEND"] = restore
+
+
+def reinstall_containerd(restart: bool = True):
     """Install and hold containerd with apt."""
     apt_update(fatal=True)
     apt_unhold(CONTAINERD_PACKAGE)
-    apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
+    with _apt_restart_services(restart):
+        apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
     apt_hold(CONTAINERD_PACKAGE)
     set_state("containerd.installed")
     remove_state("containerd.resource.evaluated")

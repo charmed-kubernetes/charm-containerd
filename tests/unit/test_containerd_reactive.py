@@ -407,3 +407,45 @@ def test_needs_gpu_reboot_true(check_output, is_state, remove_state, set_state):
     check_output.assert_called_once_with(["nvidia-smi"], stderr=STDOUT)
     set_state.assert_called_once_with("containerd.nvidia.needs_reboot")
     remove_state.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "restart,initial_env,expected_during,expected_after,log_called",
+    [
+        (True, {}, None, None, False),
+        (False, {}, "1", "1", True),
+        (True, {"NEEDRESTART_SUSPEND": "original_value"}, None, "original_value", False),
+        (False, {"NEEDRESTART_SUSPEND": "original_value"}, "1", "original_value", True),
+    ],
+    ids=[
+        "restart=True, no initial env",
+        "restart=False, no initial env",
+        "restart=True, with initial env",
+        "restart=False, with initial env",
+    ],
+)
+@mock.patch.object(containerd, "log")
+@mock.patch.dict(os.environ, {}, clear=True)
+def test_apt_restart_services(mock_log, restart, initial_env, expected_during, expected_after, log_called):
+    """Verify _apt_restart_services behavior with various configurations."""
+    # Setup initial environment from parameters
+    os.environ.update(initial_env)
+
+    with containerd._apt_restart_services(restart=restart):
+        # Check value during context
+        if expected_during is None:
+            assert "NEEDRESTART_SUSPEND" not in os.environ
+        else:
+            assert os.environ["NEEDRESTART_SUSPEND"] == expected_during
+
+    # Check value after context
+    if expected_after is None:
+        assert "NEEDRESTART_SUSPEND" not in os.environ
+    else:
+        assert os.environ["NEEDRESTART_SUSPEND"] == expected_after
+
+    # Check log call
+    if log_called:
+        mock_log.assert_called_once_with("Services will be not restarted after apt operations.")
+    else:
+        mock_log.assert_not_called()
