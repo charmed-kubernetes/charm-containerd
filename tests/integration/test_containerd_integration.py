@@ -14,7 +14,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from utils import JujuRun
 import yaml
 
-
 log = logging.getLogger(__name__)
 
 
