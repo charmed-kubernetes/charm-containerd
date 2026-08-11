@@ -16,7 +16,7 @@ def test_get_sandbox_image():
     """Verify we return a sandbox image from the appropriate registry."""
     image_name = "pause:3.6"
 
-    canonical_registry = "rocks.canonical.com:443/cdk"
+    canonical_registry = "ghcr.io/canonical/cdk"
     related_registry = "my.registry.com:5000"
     upstream_registry = "k8s.gcr.io"
 
