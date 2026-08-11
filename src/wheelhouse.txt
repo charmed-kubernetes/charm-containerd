@@ -1,3 +1,4 @@
 charms.reactive==1.5.3
+pbr==7.0.3
 setuptools==70.3.0
 setuptools-scm==7.1.0
