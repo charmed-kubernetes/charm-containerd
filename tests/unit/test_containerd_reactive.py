@@ -169,7 +169,7 @@ def test_custom_registries_render(mock_config, mock_endpoint_from_flag, gpu, ver
             return False
 
     def jinja_render(source, target, context):
-        env = jinja2.Environment(loader=jinja2.FileSystemLoader("src/templates"))
+        env = jinja2.Environment(loader=jinja2.FileSystemLoader("src/templates")) # nosec B701
         template = env.get_template(source)
         with open(target, "w") as fp:
             fp.write(template.render(context))
