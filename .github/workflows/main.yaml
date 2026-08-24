@@ -2,8 +2,6 @@ name: Run tests with Tox
 
 on:
   pull_request:
-    branches:
-    - main
 
 jobs:
   call-inclusive-naming-check:
