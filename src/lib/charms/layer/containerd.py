@@ -90,7 +90,7 @@ def get_sandbox_image():
     :return: str container image location
     """
     db = unitdata.kv()
-    canonical_registry = "rocks.canonical.com:443/cdk"
+    canonical_registry = "ghcr.io/canonical/cdk"
     upstream_registry = "k8s.gcr.io"
 
     docker_registry = db.get("registry", None)
