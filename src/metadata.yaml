@@ -20,10 +20,12 @@ requires:
     scope: container
   docker-registry:
     interface: docker-registry
+    optional: true
 provides:
   untrusted:
     interface: untrusted-container-runtime
     scope: container
+    optional: true
 resources:
   containerd:
     type: file
