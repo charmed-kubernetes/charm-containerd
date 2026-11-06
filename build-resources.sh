@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 set -eux
-VERSION="${VERSION:-1.7.30}"
+VERSION="${VERSION:-1.7.36}"
 ARCH="${ARCH:-amd64 arm64 }"
 
 temp_dir="$(readlink -f build-resources.tmp)"
