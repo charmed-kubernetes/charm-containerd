@@ -99,9 +99,7 @@ def _resolve_config_version(version: typing.Tuple[int, int, int]) -> int:
     if selected_version == 2 and (1, 3, 0) <= version < (3, 0, 0):
         return selected_version
     raise ValueError(
-        "config_version {!r} is incompatible with containerd {}".format(
-            config_version, ".".join(map(str, version))
-        )
+        "config_version {!r} is incompatible with containerd {}".format(config_version, ".".join(map(str, version)))
     )
 
 
