@@ -66,10 +66,10 @@ async def deploy_bundle(ops_test, model_name, overlay, template_context, channel
     with ops_test.model_context(model_name) as model:
         overlays = [ops_test.Bundle("kubernetes-core", channel=channel), overlay]
 
-        log.info("Build bundle for model %s", model_name)
+        log.info("Build Bundle...")
         bundle, *overlays = await ops_test.async_render_bundles(*overlays, **template_context)
 
-        log.info("Deploy bundle in model %s", model_name)
+        log.info("Deploy Bundle...")
         cmd = f"juju deploy -m {ops_test.model_full_name} {bundle} "
         cmd += " ".join(f"--overlay={fragment}" for fragment in overlays)
         rc, stdout, stderr = await ops_test.run(*shlex.split(cmd))
@@ -90,17 +90,24 @@ async def test_build_and_deploy(ops_test, integration_models, tmp_path):
     log.info("Build Charm...")
     charm = next(Path.cwd().glob("containerd*.charm"), None)
     if not charm:
+        log.info("Build Charm...")
         charm = await ops_test.build_charm(".")
     charm = charm.resolve()
 
-    resources = await ops_test.build_resources(Path.cwd() / "build-resources.sh", with_sudo=False)
-    if resources:
-        resource = next(path for path in resources if path.stem == "containerd-multiarch")
+    build_script = Path.cwd() / "build-resources.sh"
+    resources = await ops_test.build_resources(build_script, with_sudo=False)
+    expected_resources = {"containerd-multiarch"}
+
+    if resources and all(rsc.stem in expected_resources for rsc in resources):
+        resources = {rsc.stem.replace("-", "_"): rsc for rsc in resources}
     else:
         log.info("Failed to build resources, downloading from latest/edge")
         arch_resources = ops_test.arch_specific_resources(charm)
-        downloaded = await ops_test.download_resources(charm, resources=arch_resources)
-        resource = downloaded["containerd"]
+        resources = await ops_test.download_resources(charm, resources=arch_resources)
+        resources = {name.replace("-", "_"): rsc for name, rsc in resources.items()}
+
+    assert resources, "Failed to build or download charm resources."
+    resource = next(iter(resources.values()))
 
     empty_resource = tmp_path / "containerd.tgz"
     empty_resource.touch()
