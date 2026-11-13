@@ -4,6 +4,7 @@ import os
 import base64
 import binascii
 import json
+from pathlib import Path
 import re
 import traceback
 import typing
@@ -11,6 +12,7 @@ import typing
 from subprocess import check_call, check_output, CalledProcessError, STDOUT
 import urllib.request
 import urllib.error
+import urllib.parse
 
 from charms.reactive import (
     hook,
@@ -52,6 +54,53 @@ from charmhelpers.fetch import (
 from charmhelpers.fetch.ubuntu_apt_pkg import Package
 
 NVIDIA_SOURCES_FILE = "/etc/apt/sources.list.d/nvidia.list"
+
+
+def _containerd_version(value: str) -> typing.Tuple[int, int, int]:
+    """Parse a containerd version."""
+    match = re.search(r"(?<!\d)v?(\d+)\.(\d+)\.(\d+)(?!\d)", value)
+    if not match:
+        raise ValueError("Unable to determine containerd version from {!r}".format(value))
+    return tuple(int(part) for part in match.groups())
+
+
+def _containerd_config_version(version: typing.Tuple[int, int, int]) -> int:
+    """Return the config version for a containerd version."""
+    # Config v2 was introduced in containerd 1.3.
+    if (1, 0, 0) <= version < (1, 3, 0):
+        return 1
+    if (1, 3, 0) <= version < (2, 0, 0):
+        return 2
+    if (2, 0, 0) <= version < (3, 0, 0):
+        return 3
+    raise ValueError("Containerd {} is not supported".format(".".join(map(str, version))))
+
+
+def _installed_containerd_version() -> typing.Tuple[int, int, int]:
+    """Return the installed containerd version."""
+    output = check_output(["containerd", "--version"]).decode()
+    return _containerd_version(output)
+
+
+def _resolve_config_version(version: typing.Tuple[int, int, int]) -> int:
+    """Return the configured legacy version or detect it from containerd."""
+    config_version = config().get("config_version")
+    if is_state("containerd.config-version.auto"):
+        config_version = "auto"
+
+    if config_version == "auto":
+        return _containerd_config_version(version)
+    if config_version not in ("v1", "v2"):
+        raise ValueError("Invalid config_version {!r}".format(config_version))
+
+    selected_version = int(config_version.removeprefix("v"))
+    if selected_version == 1 and (1, 0, 0) <= version < (2, 0, 0):
+        return selected_version
+    if selected_version == 2 and (1, 3, 0) <= version < (3, 0, 0):
+        return selected_version
+    raise ValueError(
+        "config_version {!r} is incompatible with containerd {}".format(config_version, ".".join(map(str, version)))
+    )
 
 
 def apt_packages(packages: typing.Set[str]) -> typing.Mapping[str, Package]:
@@ -199,6 +248,10 @@ def charm_status():
     """
     if is_state("upgrade.series.in-progress"):
         status.blocked("Series upgrade in progress")
+    elif is_state("containerd.config-version.unsupported"):
+        status.blocked("Unsupported containerd config version")
+    elif is_state("containerd.custom-registries.invalid"):
+        status.blocked("Invalid custom_registries")
     elif is_state("containerd.nvidia.invalid-option"):
         status.blocked("{} is an invalid option for gpu_driver".format(config().get("gpu_driver")))
     elif is_state("containerd.nvidia.fetch_keys_failed"):
@@ -295,6 +348,23 @@ class Registry:
         if self.host is None:
             self.host = strip_url(self.url)
 
+    @property
+    def server(self) -> str:
+        """Return the server endpoint for v3 config."""
+        # If they match, the URL points directly to the registry.
+        # Otherwise, the URL points to a mirror and the registry host is the fallback.
+        if self.host == self.url_host:
+            return self.url
+        return "https://{}".format(self.host)
+
+    @property
+    def url_host(self) -> str:
+        """Return the host and optional port from the URL."""
+        url = self.url
+        if "://" not in url:
+            url = "https://{}".format(url)
+        return urllib.parse.urlsplit(url).netloc
+
     @classmethod
     def from_dict(cls, idx: int, value: typing.Mapping[str, typing.Any]):
         """Build a Registry object from a dict."""
@@ -340,9 +410,12 @@ class Registry:
 
     def install_tls(self, config_directory):
         """Install tls content onto the file system."""
-        self.ca = self._write_tls_content(self.ca_file, "ca", config_directory)
-        self.key = self._write_tls_content(self.key_file, "key", config_directory)
-        self.cert = self._write_tls_content(self.cert_file, "cert", config_directory)
+        if self.ca_file is not None:
+            self.ca = self._write_tls_content(self.ca_file, "ca", config_directory)
+        if self.key_file is not None:
+            self.key = self._write_tls_content(self.key_file, "key", config_directory)
+        if self.cert_file is not None:
+            self.cert = self._write_tls_content(self.cert_file, "cert", config_directory)
 
     def uninstall_tls(self, config_directory):
         """Remove tls content from the file system."""
@@ -397,6 +470,36 @@ def _registries_list(registries: str, default=None):
     return validated
 
 
+def _insert_registry_from_relation(registries):
+    """Add the relation registry."""
+    db_registry = DB.get("registry", None)
+    if not db_registry:
+        return registries
+    db_host = db_registry.get("host") or strip_url(db_registry["url"])
+
+    # Ensure that relation and custom registries cannot use the same host.
+    hosts = {registry.host for registry in registries}
+    if db_host in hosts:
+        raise DuplicateError("Duplicate registry host configuration {}".format(db_host))
+
+    registry = Registry(
+        url=db_registry["url"],
+        host=db_host,
+        username=db_registry.get("username"),
+        password=db_registry.get("password"),
+        ca_file=db_registry.get("ca_file"),
+        cert_file=db_registry.get("cert_file"),
+        key_file=db_registry.get("key_file"),
+        insecure_skip_verify=db_registry.get("insecure_skip_verify"),
+    )
+    registry.ca = db_registry.get("ca")
+    registry.cert = db_registry.get("cert")
+    registry.key = db_registry.get("key")
+    registries.append(registry)
+
+    return registries
+
+
 def merge_custom_registries(config_directory, custom_registries, old_custom_registries):
     """
     Merge custom registries and Docker registries from relation.
@@ -408,22 +511,12 @@ def merge_custom_registries(config_directory, custom_registries, old_custom_regi
     """
     registries = _registries_list(custom_registries, default=[])
     registries = insert_docker_io_to_custom_registries(registries)
+    registries = _insert_registry_from_relation(registries)
+
     old_registries = []
     if old_custom_registries:
         old_registries += _registries_list(old_custom_registries, default=[])
     update_custom_tls_config(config_directory, registries, old_registries)
-
-    db_registry = DB.get("registry", None)
-    if db_registry:
-        ca = db_registry.pop("ca", None)
-        cert = db_registry.pop("cert", None)
-        key = db_registry.pop("key", None)
-        docker_registry = Registry(**db_registry)
-        docker_registry.ca = ca
-        docker_registry.cert = cert
-        docker_registry.key = key
-
-        registries.append(docker_registry)
 
     return registries
 
@@ -452,6 +545,16 @@ def update_status():
     """
     if _juju_proxy_changed():
         set_state("containerd.juju-proxy.changed")
+
+
+@hook("install")
+def install_charm():
+    """
+    Triggered when install is called.
+
+    :return: None
+    """
+    set_state("containerd.config-version.auto")
 
 
 @hook("upgrade-charm")
@@ -772,6 +875,45 @@ def gpu_config_changed():
 
 CONFIG_DIRECTORY = "/etc/containerd"
 CONFIG_FILE = "config.toml"
+REGISTRY_CONFIG_DIRECTORY = "certs.d"
+REGISTRY_CONFIG_FILE = "hosts.toml"
+
+
+def _render_registry_config(config_directory: str, registries: typing.List[Registry]) -> None:
+    """Render hosts.toml files and remove stale files."""
+    previous_hosts = set(DB.get("registry-hosts", []))
+    current_hosts = set()
+    for registry in registries:
+        if not registry.host or registry.host in (".", "..") or "/" in registry.host:
+            raise ValidationError("registry host {!r} is not valid".format(registry.host))
+        current_hosts.add(registry.host)
+
+    registry_directory = Path(config_directory) / REGISTRY_CONFIG_DIRECTORY
+    os.makedirs(registry_directory, mode=0o755, exist_ok=True)
+
+    for registry in registries:
+        host_directory = registry_directory / registry.host
+        os.makedirs(host_directory, mode=0o755, exist_ok=True)
+        hosts_file = host_directory / REGISTRY_CONFIG_FILE
+        render(
+            REGISTRY_CONFIG_FILE,
+            str(hosts_file),
+            {"registry": registry},
+        )
+
+    for host_name in previous_hosts - current_hosts:
+        host_directory = registry_directory / host_name
+        hosts_file = host_directory / REGISTRY_CONFIG_FILE
+        try:
+            os.remove(hosts_file)
+        except FileNotFoundError:
+            pass
+        try:
+            os.rmdir(host_directory)
+        except (FileNotFoundError, OSError):
+            pass
+
+    DB.set("registry-hosts", sorted(current_hosts))
 
 
 @when("config.changed")
@@ -787,15 +929,23 @@ def config_changed():
 
     # Create "dumb" context based on Config to avoid triggering config.changed
     context = dict(config())
-    if context["config_version"] == "v2":
-        template_config = "config_v2.toml"
-    else:
-        template_config = "config.toml"
 
-    # Configure runtime type
+    try:
+        version = _installed_containerd_version()
+        config_version = _resolve_config_version(version)
+    except ValueError:
+        set_state("containerd.config-version.unsupported")
+        return
+    remove_state("containerd.config-version.unsupported")
+
+    template_config = {
+        1: "config.toml",
+        2: "config_v2.toml",
+        3: "config_v3.toml",
+    }[config_version]
+
     context["runtime_type"] = "io.containerd.runc.v2"
-
-    if not containerd.can_mount_cgroup2():
+    if config_version in (1, 2) and not containerd.can_mount_cgroup2():
         context["runtime_type"] = "io.containerd.runc.v1"
 
     endpoint = endpoint_from_flag("endpoint.containerd.available")
@@ -825,9 +975,16 @@ def config_changed():
         status.blocked("Invalid custom_registries: {}".format(invalid_reason.splitlines()[-1]))
         return
 
-    context["custom_registries"] = merge_custom_registries(
-        CONFIG_DIRECTORY, context["custom_registries"], old_custom_registries
-    )
+    try:
+        context["custom_registries"] = merge_custom_registries(
+            CONFIG_DIRECTORY, context["custom_registries"], old_custom_registries
+        )
+        if config_version == 3:
+            _render_registry_config(CONFIG_DIRECTORY, context["custom_registries"])
+    except ValidationError:
+        set_state("containerd.custom-registries.invalid")
+        return
+    remove_state("containerd.custom-registries.invalid")
 
     untrusted = DB.get("untrusted")
     if untrusted:
