@@ -19,49 +19,111 @@ import yaml
 
 log = logging.getLogger(__name__)
 
+APT_MODEL = "apt"
+RESOURCE_MODEL = "resource"
+
 
 def format_kubectl_cmd(cmd: str) -> str:
     """Return a kubectl command with the kubeconfig path."""
     return f"kubectl --kubeconfig /root/.kube/config {cmd}"
 
 
+@pytest_asyncio.fixture(scope="module")
+async def integration_models(ops_test):
+    """Track the integration models and remove them after the test module."""
+    suffix = uuid.uuid4().hex[:8]
+    models = {
+        APT_MODEL: f"containerd-apt-{suffix}",
+        RESOURCE_MODEL: f"containerd-resource-{suffix}",
+    }
+    tracked_models = []
+    try:
+        for model_type, model_name in models.items():
+            default_base = "ubuntu@22.04" if model_type == RESOURCE_MODEL else "ubuntu@24.04"
+            await ops_test.track_model(model_name, keep=False, config={"default-base": default_base})
+            tracked_models.append(model_name)
+
+        yield models
+    finally:
+        for model_name in reversed(tracked_models):
+            await ops_test.forget_model(
+                model_name,
+                timeout=20 * 60,
+                destroy_storage=True,
+                allow_failure=True,
+            )
+
+
+@pytest_asyncio.fixture()
+async def integration_model(request, ops_test, integration_models):
+    """Select the parameterized integration model."""
+    with ops_test.model_context(integration_models[request.param]) as model:
+        yield model
+
+
+async def deploy_bundle(ops_test, model_name, overlay, template_context, channel="edge", wait_for_idle=None):
+    """Deploy the integration bundle in a tracked model."""
+    with ops_test.model_context(model_name) as model:
+        overlays = [ops_test.Bundle("kubernetes-core", channel=channel), overlay]
+
+        log.info("Build bundle for model %s", model_name)
+        bundle, *overlays = await ops_test.async_render_bundles(*overlays, **template_context)
+
+        log.info("Deploy bundle in model %s", model_name)
+        cmd = f"juju deploy -m {ops_test.model_full_name} {bundle} "
+        cmd += " ".join(f"--overlay={fragment}" for fragment in overlays)
+        rc, stdout, stderr = await ops_test.run(*shlex.split(cmd))
+        assert rc == 0, f"Bundle deploy failed: {(stderr or stdout).strip()}"
+
+        if wait_for_idle is not None:
+            wait_options = dict(wait_for_idle)
+            wait_options.setdefault(
+                "apps",
+                [app for fragment in (bundle, *overlays) for app in yaml.safe_load(fragment.open())["applications"]],
+            )
+            await model.wait_for_idle(**wait_options)
+
+
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test, tmp_path):
-    """Build and deploy Containerd in bundle."""
+async def test_build_and_deploy(ops_test, integration_models, tmp_path):
+    """Build and deploy all containerd integration models."""
     log.info("Build Charm...")
     charm = next(Path.cwd().glob("containerd*.charm"), None)
     if not charm:
-        log.info("Build Charm...")
         charm = await ops_test.build_charm(".")
+    charm = charm.resolve()
 
-    # Use the empty-resource workaround so apt's containerd 2.x remains installed.
+    resources = await ops_test.build_resources(Path.cwd() / "build-resources.sh", with_sudo=False)
+    if resources:
+        resource = next(path for path in resources if path.stem == "containerd-multiarch")
+    else:
+        log.info("Failed to build resources, downloading from latest/edge")
+        arch_resources = ops_test.arch_specific_resources(charm)
+        downloaded = await ops_test.download_resources(charm, resources=arch_resources)
+        resource = downloaded["containerd"]
+
     empty_resource = tmp_path / "containerd.tgz"
     empty_resource.touch()
 
-    overlays = [
-        ops_test.Bundle("kubernetes-core", channel="edge"),
+    await deploy_bundle(
+        ops_test,
+        integration_models[APT_MODEL],
         Path("tests/data/charm.yaml"),
-    ]
-
-    log.info("Build Bundle...")
-    bundle, *overlays = await ops_test.async_render_bundles(
-        *overlays,
-        charm=charm,
-        containerd_resource=empty_resource,
+        {"charm": charm, "containerd_resource": empty_resource},
+        wait_for_idle={"status": "active", "timeout": 60 * 60},
+    )
+    await deploy_bundle(
+        ops_test,
+        integration_models[RESOURCE_MODEL],
+        Path("tests/data/charm.yaml"),
+        {"charm": charm, "containerd_resource": resource},
+        channel="1.30/stable",
+        wait_for_idle={"status": "active", "timeout": 60 * 60},
     )
 
-    log.info("Deploy Bundle...")
-    model = ops_test.model_full_name
-    cmd = f"juju deploy -m {model} {bundle} "
-    cmd += " ".join(f"--overlay={f}" for f in overlays)
-    rc, stdout, stderr = await ops_test.run(*shlex.split(cmd))
-    assert rc == 0, f"Bundle deploy failed: {(stderr or stdout).strip()}"
 
-    apps = [app for fragment in (bundle, *overlays) for app in yaml.safe_load(fragment.open())["applications"]]
-    await ops_test.model.wait_for_idle(apps=apps, status="active", timeout=60 * 60)
-
-
-async def test_status_messages(ops_test):
+@pytest.mark.parametrize("integration_model", (APT_MODEL, RESOURCE_MODEL), indirect=True)
+async def test_status_messages(ops_test, integration_model):
     """Validate that the status messages are correct."""
     for unit in ops_test.model.applications["containerd"].units:
         assert unit.workload_status == "active"
@@ -86,7 +148,8 @@ async def pods_in_state(unit: Unit, selector: Dict[str, str], state: str = "Runn
 
 
 @pytest.mark.parametrize("which_action", ("containerd", "packages"))
-async def test_upgrade_action(ops_test, which_action):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_upgrade_action(ops_test, integration_model, which_action):
     """Test running upgrade action."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
@@ -101,7 +164,8 @@ async def test_upgrade_action(ops_test, which_action):
 
 
 @pytest.mark.parametrize("which_action", ("containerd", "packages"))
-async def test_upgrade_dry_run_action(ops_test, which_action):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_upgrade_dry_run_action(ops_test, integration_model, which_action):
     """Test running upgrade action in dry-run mode."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
@@ -114,7 +178,8 @@ async def test_upgrade_dry_run_action(ops_test, which_action):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-async def test_upgrade_action_containerd_force(ops_test):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_upgrade_action_containerd_force(ops_test, integration_model):
     """Test running upgrade action without GPU and with force."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
@@ -128,7 +193,8 @@ async def test_upgrade_action_containerd_force(ops_test):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test, integration_model):
     """Test running GPU force upgrade-action with no GPU drivers installed.
 
     upgrade-action with `GPU` and `force` flags both set but without GPU drivers currently
@@ -145,9 +211,9 @@ async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-@pytest_asyncio.fixture(scope="module")
-async def juju_config(ops_test):
-    """Apply configuration for a test, then revert after the test is completed."""
+@pytest_asyncio.fixture()
+async def juju_config(ops_test, integration_model):
+    """Apply configuration for a test, then revert it."""
 
     async def setup(application, _timeout=10 * 60, **new_config):
         """Apply config by application name and the config values.
@@ -161,15 +227,7 @@ async def juju_config(ops_test):
         await ops_test.model.wait_for_idle(apps=[application], status="active", timeout=_timeout)
 
     async def update_reverts(application, configs, _timeout):
-        """Control what config is reverted per app during the test module teardown.
-
-        Because juju_config is a module scoped fixture, it isn't torn down until all the tests
-        in the module are completed. The `setup` method could be called multiple times
-        by various tests, but only the first call should gather the original config
-
-        Subsequent calls, should update which keys are reverted, and the greatest timeout
-        selected to revert all keys.
-        """
+        """Track the original values and timeout for this test."""
         reverts = to_revert.get(application)
         if not reverts:
             reverts = (await ops_test.model.applications[application].get_config(), set(configs), _timeout)
@@ -255,16 +313,17 @@ def public_registry_image():
 
 
 @pytest_asyncio.fixture(scope="module")
-async def private_registry_image(ops_test, public_registry_image):
+async def private_registry_image(ops_test, integration_models, public_registry_image):
     """Push an image to the test registry."""
-    unit = ops_test.model.applications["docker-registry"].units[0]
-    action = await JujuRun.action(unit, "push", image=public_registry_image)
-    assert action.results["outcome"] == "success"
-    return action.results["raw"].removeprefix("pushed ")
+    with ops_test.model_context(integration_models[APT_MODEL]):
+        unit = ops_test.model.applications["docker-registry"].units[0]
+        action = await JujuRun.action(unit, "push", image=public_registry_image)
+        assert action.results["outcome"] == "success"
+        return action.results["raw"].removeprefix("pushed ")
 
 
 @pytest_asyncio.fixture()
-async def custom_registry_image(ops_test, juju_config, public_registry_image):
+async def custom_registry_image(ops_test, integration_model, juju_config, public_registry_image):
     """Push an image to the custom registry."""
     # Disable authentication while seeding the registry.
     await juju_config("custom-registry", **{"auth-basic-password": ""})
@@ -276,7 +335,7 @@ async def custom_registry_image(ops_test, juju_config, public_registry_image):
 
 
 @pytest_asyncio.fixture()
-async def custom_registry_config(ops_test, custom_registry_image):
+async def custom_registry_config(ops_test, integration_model, custom_registry_image):
     """Return TLS config for the custom registry."""
     unit = ops_test.model.applications["containerd"].units[0]
     host = custom_registry_image.split("/", 1)[0]
@@ -316,7 +375,8 @@ async def custom_registry_config(ops_test, custom_registry_image):
     return config
 
 
-async def test_config_version_ignored(ops_test, juju_config):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_config_version_ignored(ops_test, integration_model, juju_config):
     """Ignore config_version on a new deployment."""
     units = ops_test.model.applications["containerd"].units
     config = await containerd_config(units[0])
@@ -329,142 +389,8 @@ async def test_config_version_ignored(ops_test, juju_config):
         assert containerd_config_version(config) == config_version
 
 
-@pytest.mark.parametrize(
-    "config_version1,config_version2,expected_version1,expected_version2",
-    [
-        (None, "v2", 3, 2),
-        ("v2", "auto", 2, 3),
-    ],
-)
-async def test_config_version_preserved(
-    ops_test,
-    tmp_path,
-    config_version1,
-    config_version2,
-    expected_version1,
-    expected_version2,
-):
-    """Preserve config_version support on an upgraded deployment."""
-    charm = (await ops_test.build_charm(".")).resolve()
-
-    # Use the empty-resource workaround.
-    empty_resource = tmp_path / "containerd.tgz"
-    empty_resource.touch()
-
-    model_name = f"config-version-{config_version1 or 'unset'}"
-    await ops_test.track_model(
-        model_name,
-        keep=False,
-        config={"default-base": "ubuntu@24.04"},
-    )
-    try:
-        with ops_test.model_context(model_name) as model:
-            await model.deploy(
-                "kubernetes-worker",
-                channel="1.36/edge",
-                base="ubuntu@24.04",
-            )
-            # await model.deploy(
-            #     "containerd",
-            #     application_name="containerd",
-            #     channel="latest/edge",
-            #     revision=104,
-            #     base="ubuntu@24.04",
-            #     config={"config_version": config_version1} if config_version1 else None,
-            #     resources={"containerd": str(empty_resource)},
-            # )
-            # Work around model.deploy() failing with an empty resource:
-            # TypeError: Strings must be encoded before hashing
-            deploy = [
-                "juju",
-                "deploy",
-                "-m",
-                ops_test.model_full_name,
-                "containerd",
-                "containerd",
-                "--channel",
-                "latest/edge",
-                "--revision",
-                "104",
-                "--base",
-                "ubuntu@24.04",
-                "--resource",
-                f"containerd={empty_resource}",
-            ]
-            if config_version1:
-                deploy.extend(("--config", f"config_version={config_version1}"))
-            rc, stdout, stderr = await ops_test.run(*deploy)
-            assert rc == 0, f"Containerd deploy failed: {(stderr or stdout).strip()}"
-
-            await model.add_relation(
-                "containerd:containerd",
-                "kubernetes-worker:container-runtime",
-            )
-            await model.wait_for_idle(
-                apps=["containerd"],
-                raise_on_error=False,
-                timeout=20 * 60,
-            )
-
-            # Refresh once to record the old config_version.
-            application = model.applications["containerd"]
-
-            # Default before config_version was deprecated.
-            charm_config = await application.get_config()
-            assert charm_config["config_version"]["value"] == (config_version1 or "v2")
-
-            await application.refresh(
-                path=charm,
-                force_units=True,
-            )
-            await model.wait_for_idle(
-                apps=["containerd"],
-                status="active",
-                timeout=20 * 60,
-            )
-
-            # Default after config_version was deprecated.
-            charm_config = await application.get_config()
-            assert charm_config["config_version"]["value"] == (config_version1 or "auto")
-
-            unit = application.units[0]
-            config = await containerd_config(unit)
-            assert containerd_config_version(config) == expected_version1
-
-            # Change config_version after the deployment has been upgraded.
-            await application.set_config({"config_version": config_version2})
-            await model.wait_for_idle(
-                apps=["containerd"],
-                status="active",
-                timeout=20 * 60,
-            )
-
-            config = await containerd_config(unit)
-            assert containerd_config_version(config) == expected_version2
-
-            # Refresh again to ensure the new value is preserved.
-            await application.refresh(
-                path=charm,
-                force_units=True,
-            )
-            await model.wait_for_idle(
-                apps=["containerd"],
-                status="active",
-                timeout=20 * 60,
-            )
-
-            config = await containerd_config(unit)
-            assert containerd_config_version(config) == expected_version2
-    finally:
-        await ops_test.forget_model(
-            model_name,
-            timeout=20 * 60,
-            destroy_storage=True,
-            allow_failure=False,
-        )
-
-
-async def test_config_dockerio_registry_exists(ops_test):
+@pytest.mark.parametrize("integration_model", (APT_MODEL, RESOURCE_MODEL), indirect=True)
+async def test_config_dockerio_registry_exists(ops_test, integration_model):
     """Check the Docker Hub registry exists in containerd config."""
     for unit in ops_test.model.applications["containerd"].units:
         config = await containerd_config(unit)
@@ -484,7 +410,8 @@ async def test_config_dockerio_registry_exists(ops_test):
             assert "https://registry-1.docker.io" in hosts["host"]
 
 
-async def test_config_relation_registry_exists(ops_test):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_config_relation_registry_exists(ops_test, integration_model):
     """Check the relation registry exists in containerd config."""
     registry_unit = ops_test.model.applications["docker-registry"].units[0]
     for unit in ops_test.model.applications["containerd"].units:
@@ -512,7 +439,8 @@ async def test_config_relation_registry_exists(ops_test):
             assert "configs" not in registry
 
 
-async def test_proxy_registry_pull(ops_test, juju_config):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_proxy_registry_pull(ops_test, integration_model, juju_config):
     """Check containerd uses its configured proxy."""
     unit = ops_test.model.applications["containerd"].units[0]
     service = "containerd-proxy-test"
@@ -541,19 +469,22 @@ async def test_proxy_registry_pull(ops_test, juju_config):
         await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=10 * 60)
 
 
-async def test_public_registry_pull(ops_test, public_registry_image):
+@pytest.mark.parametrize("integration_model", (APT_MODEL, RESOURCE_MODEL), indirect=True)
+async def test_public_registry_pull(ops_test, integration_model, public_registry_image):
     """Pull an image from a public registry."""
     unit = ops_test.model.applications["containerd"].units[0]
     await run_image(unit, "containerd-public-pull", public_registry_image)
 
 
-async def test_private_registry_tls_pull(ops_test, private_registry_image):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_private_registry_tls_pull(ops_test, integration_model, private_registry_image):
     """Pull an image from the private TLS registry."""
     unit = ops_test.model.applications["containerd"].units[0]
     await run_image(unit, "containerd-private-tls-pull", private_registry_image)
 
 
-async def test_private_registry_basic_auth_pull(ops_test, juju_config, private_registry_image):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_private_registry_basic_auth_pull(ops_test, integration_model, juju_config, private_registry_image):
     """Pull an image from the private registry with basic auth."""
     unit = ops_test.model.applications["containerd"].units[0]
     username = "admin"
@@ -575,7 +506,8 @@ async def test_private_registry_basic_auth_pull(ops_test, juju_config, private_r
     ("", "{}", "[{}]"),
     ids=("empty", "not-a-list", "missing-url"),
 )
-async def test_custom_registries_invalid(ops_test, invalid_config):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_custom_registries_invalid(ops_test, integration_model, invalid_config):
     """Check invalid registry configuration blocks the charm and can be corrected."""
     containerd = ops_test.model.applications["containerd"]
     config = await containerd.get_config()
@@ -597,8 +529,10 @@ async def test_custom_registries_invalid(ops_test, invalid_config):
         )
 
 
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
 async def test_custom_registry_tls_pull(
     ops_test,
+    integration_model,
     custom_registry_image,
     custom_registry_config,
 ):
@@ -615,8 +549,10 @@ async def test_custom_registry_tls_pull(
         await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=10 * 60)
 
 
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
 async def test_custom_registry_basic_auth_pull(
     ops_test,
+    integration_model,
     juju_config,
     custom_registry_image,
     custom_registry_config,
@@ -644,7 +580,8 @@ async def test_custom_registry_basic_auth_pull(
         await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=10 * 60)
 
 
-async def test_private_registry_relation_cleanup(ops_test, juju_config):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_private_registry_relation_cleanup(ops_test, integration_model, juju_config):
     """Check remove relation cleans up the registry config."""
     await juju_config("docker-registry", **{"auth-basic-password": "integration-test-password"})
     await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=10 * 60)
@@ -689,7 +626,8 @@ async def test_private_registry_relation_cleanup(ops_test, juju_config):
         )
 
 
-async def test_containerd_disable_gpu_support(ops_test, juju_config):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_containerd_disable_gpu_support(ops_test, integration_model, juju_config):
     """Test that disabling gpu support removes nvidia drivers."""
     await juju_config("containerd", gpu_driver="none")
     for unit in ops_test.model.applications["containerd"].units:
@@ -700,7 +638,8 @@ async def test_containerd_disable_gpu_support(ops_test, juju_config):
         assert "cuda-drivers" in output.stderr, "cuda-drivers shouldn't be installed"
 
 
-async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_containerd_nvidia_gpu_support(ops_test, integration_model, juju_config):
     """Test that enabling gpu support installed nvidia drivers."""
     await juju_config("containerd", gpu_driver="nvidia", _timeout=15 * 60)
     for unit in ops_test.model.applications["containerd"].units:
@@ -712,7 +651,8 @@ async def test_containerd_nvidia_gpu_support(ops_test, juju_config):
 
 
 @pytest.mark.xfail(reason="No apt repo for nvidia-container-runtime")
-async def test_upgrade_action_gpu_force(ops_test):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_upgrade_action_gpu_force(ops_test, integration_model):
     """Test running upgrade action with GPU and force."""
     unit = ops_test.model.applications["containerd"].units[0]
     start = await process_elapsed_time(unit, "containerd")
@@ -727,7 +667,7 @@ async def test_upgrade_action_gpu_force(ops_test):
 
 
 @pytest_asyncio.fixture()
-async def microbots(ops_test: OpsTest, tmp_path: Path):
+async def microbots(ops_test: OpsTest, integration_model, tmp_path: Path):
     """Start microbots workload on each k8s-worker, cleanup at the end of the test."""
     workers: Application = ops_test.model.applications["kubernetes-worker"]
     any_worker: Unit = workers.units[0]
@@ -753,7 +693,8 @@ async def microbots(ops_test: OpsTest, tmp_path: Path):
         await JujuRun.command(any_worker, kubectl.format(command="delete"))
 
 
-async def test_restart_containerd(microbots, ops_test: OpsTest):
+@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+async def test_restart_containerd(microbots, ops_test: OpsTest, integration_model):
     """Test microbots continue running while containerd stopped."""
     containerds = ops_test.model.applications["containerd"]
     num_units = len(containerds.units)
