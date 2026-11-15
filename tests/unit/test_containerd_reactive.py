@@ -387,6 +387,59 @@ def test_render_registry_config_stale(render, tmp_path):
     assert unitdata.kv().get("registry-hosts") == ["registry.example"]
 
 
+@pytest.mark.parametrize("has_resource", (False, True), ids=("empty", "non-empty"))
+@mock.patch.object(containerd, "config_changed")
+@mock.patch.object(containerd, "check_call")
+@mock.patch.object(containerd.containerd, "unpack_containerd_resource")
+def test_install_containerd_resource(unpack_containerd_resource, check_call, config_changed, tmp_path, has_resource):
+    """Rerender config after evaluating the final containerd binary."""
+    set_state.reset_mock()
+    containerd.remove_state.reset_mock()
+    ordered_calls = mock.Mock()
+    ordered_calls.attach_mock(check_call, "check_call")
+    ordered_calls.attach_mock(set_state, "set_state")
+    ordered_calls.attach_mock(config_changed, "config_changed")
+
+    if has_resource:
+        binary = tmp_path / "containerd"
+        binary.touch()
+        unpack_containerd_resource.return_value = tmp_path
+        expected_calls = [
+            mock.call.check_call(["install", binary, "/usr/bin/"]),
+            mock.call.set_state("containerd.resource.installed"),
+            mock.call.set_state("containerd.resource.evaluated"),
+            mock.call.config_changed(),
+        ]
+    else:
+        unpack_containerd_resource.return_value = None
+        expected_calls = [
+            mock.call.set_state("containerd.resource.evaluated"),
+            mock.call.config_changed(),
+        ]
+
+    containerd.install_containerd_resource()
+
+    containerd.remove_state.assert_called_once_with("containerd.resource.installed")
+    assert ordered_calls.mock_calls == expected_calls
+
+
+@mock.patch.object(containerd, "config_changed")
+@mock.patch.object(containerd.containerd, "unpack_containerd_resource")
+def test_install_containerd_resource_failure(unpack_containerd_resource, config_changed):
+    """Do not evaluate or rerender an invalid resource."""
+    unpack_containerd_resource.side_effect = containerd.containerd.ResourceFailure("invalid resource")
+    set_state.reset_mock()
+    containerd.remove_state.reset_mock()
+    containerd.status.blocked.reset_mock()
+
+    containerd.install_containerd_resource()
+
+    set_state.assert_not_called()
+    containerd.remove_state.assert_not_called()
+    config_changed.assert_not_called()
+    containerd.status.blocked.assert_called_once_with("invalid resource")
+
+
 @pytest.mark.parametrize(
     "version,config_version",
     [

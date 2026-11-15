@@ -653,7 +653,7 @@ def install_containerd_resource():
             check_call(["install", bin, "/usr/bin/"])
             set_state("containerd.resource.installed")
     set_state("containerd.resource.evaluated")
-    set_state("containerd.restart")
+    config_changed()
 
 
 @when("containerd.resource.evaluated")
