@@ -19,8 +19,10 @@ import yaml
 
 log = logging.getLogger(__name__)
 
-APT_MODEL = "apt"
-RESOURCE_MODEL = "resource"
+CONTAINERD_V1_MODEL = "containerd-v1"
+CONTAINERD_V2_MODEL = "containerd-v2"
+CONTAINERD_V1_VERSION = "1.7.30"
+CONTAINERD_V2_VERSION = "2.2.1"
 
 
 def format_kubectl_cmd(cmd: str) -> str:
@@ -33,13 +35,13 @@ async def integration_models(ops_test):
     """Track the integration models and remove them after the test module."""
     suffix = uuid.uuid4().hex[:8]
     models = {
-        APT_MODEL: f"containerd-apt-{suffix}",
-        RESOURCE_MODEL: f"containerd-resource-{suffix}",
+        CONTAINERD_V1_MODEL: f"containerd-v1-{suffix}",
+        CONTAINERD_V2_MODEL: f"containerd-v2-{suffix}",
     }
     tracked_models = []
     try:
         for model_type, model_name in models.items():
-            default_base = "ubuntu@22.04" if model_type == RESOURCE_MODEL else "ubuntu@24.04"
+            default_base = "ubuntu@22.04" if model_type == CONTAINERD_V1_MODEL else "ubuntu@24.04"
             await ops_test.track_model(model_name, keep=False, config={"default-base": default_base})
             tracked_models.append(model_name)
 
@@ -85,7 +87,7 @@ async def deploy_bundle(ops_test, model_name, overlay, template_context, channel
 
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test, integration_models, tmp_path):
+async def test_build_and_deploy(ops_test, integration_models, monkeypatch, tmp_path):
     """Build and deploy all containerd integration models."""
     log.info("Build Charm...")
     charm = next(Path.cwd().glob("containerd*.charm"), None)
@@ -95,8 +97,11 @@ async def test_build_and_deploy(ops_test, integration_models, tmp_path):
     charm = charm.resolve()
 
     build_script = Path.cwd() / "build-resources.sh"
-    resources = await ops_test.build_resources(build_script, with_sudo=False)
     expected_resources = {"containerd-multiarch"}
+
+    with monkeypatch.context() as patch:
+        patch.setenv("VERSION", CONTAINERD_V1_VERSION)
+        resources = await ops_test.build_resources(build_script, with_sudo=False)
 
     if resources and all(rsc.stem in expected_resources for rsc in resources):
         resources = {rsc.stem.replace("-", "_"): rsc for rsc in resources}
@@ -106,30 +111,39 @@ async def test_build_and_deploy(ops_test, integration_models, tmp_path):
         resources = await ops_test.download_resources(charm, resources=arch_resources)
         resources = {name.replace("-", "_"): rsc for name, rsc in resources.items()}
 
-    assert resources, "Failed to build or download charm resources."
-    resource = next(iter(resources.values()))
+    assert resources, "Failed to build or download containerd 1.x resource."
+    containerd_v1_resource = next(iter(resources.values())).replace(tmp_path / "containerd-v1.tgz")
 
-    empty_resource = tmp_path / "containerd.tgz"
-    empty_resource.touch()
+    with monkeypatch.context() as patch:
+        patch.setenv("VERSION", CONTAINERD_V2_VERSION)
+        resources = await ops_test.build_resources(build_script, with_sudo=False)
+
+    if resources and all(rsc.stem in expected_resources for rsc in resources):
+        resources = {rsc.stem.replace("-", "_"): rsc for rsc in resources}
+    else:
+        resources = {}
+
+    assert resources, "Failed to build containerd 2.x resource."
+    containerd_v2_resource = next(iter(resources.values()))
 
     await deploy_bundle(
         ops_test,
-        integration_models[APT_MODEL],
+        integration_models[CONTAINERD_V1_MODEL],
         Path("tests/data/charm.yaml"),
-        {"charm": charm, "containerd_resource": empty_resource},
-        wait_for_idle={"status": "active", "timeout": 60 * 60},
-    )
-    await deploy_bundle(
-        ops_test,
-        integration_models[RESOURCE_MODEL],
-        Path("tests/data/charm.yaml"),
-        {"charm": charm, "containerd_resource": resource},
+        {"charm": charm, "containerd_resource": containerd_v1_resource},
         channel="1.30/stable",
         wait_for_idle={"status": "active", "timeout": 60 * 60},
     )
+    await deploy_bundle(
+        ops_test,
+        integration_models[CONTAINERD_V2_MODEL],
+        Path("tests/data/charm.yaml"),
+        {"charm": charm, "containerd_resource": containerd_v2_resource},
+        wait_for_idle={"status": "active", "timeout": 60 * 60},
+    )
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL, RESOURCE_MODEL), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_status_messages(ops_test, integration_model):
     """Validate that the status messages are correct."""
     for unit in ops_test.model.applications["containerd"].units:
@@ -155,7 +169,7 @@ async def pods_in_state(unit: Unit, selector: Dict[str, str], state: str = "Runn
 
 
 @pytest.mark.parametrize("which_action", ("containerd", "packages"))
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL,), indirect=True)
 async def test_upgrade_action(ops_test, integration_model, which_action):
     """Test running upgrade action."""
     unit = ops_test.model.applications["containerd"].units[0]
@@ -171,7 +185,7 @@ async def test_upgrade_action(ops_test, integration_model, which_action):
 
 
 @pytest.mark.parametrize("which_action", ("containerd", "packages"))
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL,), indirect=True)
 async def test_upgrade_dry_run_action(ops_test, integration_model, which_action):
     """Test running upgrade action in dry-run mode."""
     unit = ops_test.model.applications["containerd"].units[0]
@@ -185,7 +199,7 @@ async def test_upgrade_dry_run_action(ops_test, integration_model, which_action)
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL,), indirect=True)
 async def test_upgrade_action_containerd_force(ops_test, integration_model):
     """Test running upgrade action without GPU and with force."""
     unit = ops_test.model.applications["containerd"].units[0]
@@ -200,7 +214,7 @@ async def test_upgrade_action_containerd_force(ops_test, integration_model):
     assert end >= start, "containerd service shouldn't have been restarted"
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL,), indirect=True)
 async def test_upgrade_action_gpu_uninstalled_but_gpu_forced(ops_test, integration_model):
     """Test running GPU force upgrade-action with no GPU drivers installed.
 
@@ -320,13 +334,22 @@ def public_registry_image():
 
 
 @pytest_asyncio.fixture(scope="module")
-async def private_registry_image(ops_test, integration_models, public_registry_image):
-    """Push an image to the test registry."""
-    with ops_test.model_context(integration_models[APT_MODEL]):
-        unit = ops_test.model.applications["docker-registry"].units[0]
-        action = await JujuRun.action(unit, "push", image=public_registry_image)
-        assert action.results["outcome"] == "success"
-        return action.results["raw"].removeprefix("pushed ")
+async def private_registry_images(ops_test, integration_models, public_registry_image):
+    """Push an image to each test registry."""
+    images = {}
+    for model_name in integration_models.values():
+        with ops_test.model_context(model_name) as model:
+            unit = ops_test.model.applications["docker-registry"].units[0]
+            action = await JujuRun.action(unit, "push", image=public_registry_image)
+            assert action.results["outcome"] == "success"
+            images[model.name] = action.results["raw"].removeprefix("pushed ")
+    return images
+
+
+@pytest.fixture()
+def private_registry_image(integration_model, private_registry_images):
+    """Return the private registry image for the selected model."""
+    return private_registry_images[integration_model.name]
 
 
 @pytest_asyncio.fixture()
@@ -382,7 +405,31 @@ async def custom_registry_config(ops_test, integration_model, custom_registry_im
     return config
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize(
+    "integration_model,expected_containerd_major,expected_config_version",
+    (
+        (CONTAINERD_V1_MODEL, 1, 2),
+        (CONTAINERD_V2_MODEL, 2, 3),
+    ),
+    indirect=["integration_model"],
+)
+async def test_config_version_selected(
+    ops_test,
+    integration_model,
+    expected_containerd_major,
+    expected_config_version,
+):
+    """Select the config version for the installed containerd version."""
+    for unit in ops_test.model.applications["containerd"].units:
+        output = await JujuRun.command(unit, "containerd --version")
+        version = output.stdout.split()[2].removeprefix("v")
+        assert version.startswith(f"{expected_containerd_major}.")
+
+        config = await containerd_config(unit)
+        assert containerd_config_version(config) == expected_config_version
+
+
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_config_version_ignored(ops_test, integration_model, juju_config):
     """Ignore config_version on a new deployment."""
     units = ops_test.model.applications["containerd"].units
@@ -396,7 +443,7 @@ async def test_config_version_ignored(ops_test, integration_model, juju_config):
         assert containerd_config_version(config) == config_version
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL, RESOURCE_MODEL), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_config_dockerio_registry_exists(ops_test, integration_model):
     """Check the Docker Hub registry exists in containerd config."""
     for unit in ops_test.model.applications["containerd"].units:
@@ -417,7 +464,7 @@ async def test_config_dockerio_registry_exists(ops_test, integration_model):
             assert "https://registry-1.docker.io" in hosts["host"]
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_config_relation_registry_exists(ops_test, integration_model):
     """Check the relation registry exists in containerd config."""
     registry_unit = ops_test.model.applications["docker-registry"].units[0]
@@ -446,7 +493,7 @@ async def test_config_relation_registry_exists(ops_test, integration_model):
             assert "configs" not in registry
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_proxy_registry_pull(ops_test, integration_model, juju_config):
     """Check containerd uses its configured proxy."""
     unit = ops_test.model.applications["containerd"].units[0]
@@ -476,21 +523,21 @@ async def test_proxy_registry_pull(ops_test, integration_model, juju_config):
         await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=10 * 60)
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL, RESOURCE_MODEL), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_public_registry_pull(ops_test, integration_model, public_registry_image):
     """Pull an image from a public registry."""
     unit = ops_test.model.applications["containerd"].units[0]
     await run_image(unit, "containerd-public-pull", public_registry_image)
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_private_registry_tls_pull(ops_test, integration_model, private_registry_image):
     """Pull an image from the private TLS registry."""
     unit = ops_test.model.applications["containerd"].units[0]
     await run_image(unit, "containerd-private-tls-pull", private_registry_image)
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_private_registry_basic_auth_pull(ops_test, integration_model, juju_config, private_registry_image):
     """Pull an image from the private registry with basic auth."""
     unit = ops_test.model.applications["containerd"].units[0]
@@ -513,7 +560,7 @@ async def test_private_registry_basic_auth_pull(ops_test, integration_model, juj
     ("", "{}", "[{}]"),
     ids=("empty", "not-a-list", "missing-url"),
 )
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_custom_registries_invalid(ops_test, integration_model, invalid_config):
     """Check invalid registry configuration blocks the charm and can be corrected."""
     containerd = ops_test.model.applications["containerd"]
@@ -536,7 +583,7 @@ async def test_custom_registries_invalid(ops_test, integration_model, invalid_co
         )
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_custom_registry_tls_pull(
     ops_test,
     integration_model,
@@ -556,7 +603,7 @@ async def test_custom_registry_tls_pull(
         await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=10 * 60)
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_custom_registry_basic_auth_pull(
     ops_test,
     integration_model,
@@ -587,7 +634,7 @@ async def test_custom_registry_basic_auth_pull(
         await ops_test.model.wait_for_idle(apps=["containerd"], status="active", timeout=10 * 60)
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL, CONTAINERD_V2_MODEL), indirect=True)
 async def test_private_registry_relation_cleanup(ops_test, integration_model, juju_config):
     """Check remove relation cleans up the registry config."""
     await juju_config("docker-registry", **{"auth-basic-password": "integration-test-password"})
@@ -633,7 +680,7 @@ async def test_private_registry_relation_cleanup(ops_test, integration_model, ju
         )
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL,), indirect=True)
 async def test_containerd_disable_gpu_support(ops_test, integration_model, juju_config):
     """Test that disabling gpu support removes nvidia drivers."""
     await juju_config("containerd", gpu_driver="none")
@@ -645,7 +692,7 @@ async def test_containerd_disable_gpu_support(ops_test, integration_model, juju_
         assert "cuda-drivers" in output.stderr, "cuda-drivers shouldn't be installed"
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL,), indirect=True)
 async def test_containerd_nvidia_gpu_support(ops_test, integration_model, juju_config):
     """Test that enabling gpu support installed nvidia drivers."""
     await juju_config("containerd", gpu_driver="nvidia", _timeout=15 * 60)
@@ -658,7 +705,7 @@ async def test_containerd_nvidia_gpu_support(ops_test, integration_model, juju_c
 
 
 @pytest.mark.xfail(reason="No apt repo for nvidia-container-runtime")
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL,), indirect=True)
 async def test_upgrade_action_gpu_force(ops_test, integration_model):
     """Test running upgrade action with GPU and force."""
     unit = ops_test.model.applications["containerd"].units[0]
@@ -700,7 +747,7 @@ async def microbots(ops_test: OpsTest, integration_model, tmp_path: Path):
         await JujuRun.command(any_worker, kubectl.format(command="delete"))
 
 
-@pytest.mark.parametrize("integration_model", (APT_MODEL,), indirect=True)
+@pytest.mark.parametrize("integration_model", (CONTAINERD_V1_MODEL,), indirect=True)
 async def test_restart_containerd(microbots, ops_test: OpsTest, integration_model):
     """Test microbots continue running while containerd stopped."""
     containerds = ops_test.model.applications["containerd"]
