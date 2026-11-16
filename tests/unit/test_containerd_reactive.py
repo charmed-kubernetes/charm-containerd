@@ -45,23 +45,23 @@ def test_containerd_config_version_unsupported(version):
 
 
 @pytest.mark.parametrize(
-    "auto,config_version,selected_version",
+    "auto,config_version,containerd_version,selected_version",
     [
-        (False, "v2", 2),
-        (False, "auto", 3),
-        (True, "v1", 3),
-        (True, "v2", 3),
-        (True, "auto", 3),
+        (False, "v1", (1, 7, 30), 1),
+        (False, "v2", (2, 2, 1), 2),
+        (False, "auto", (2, 2, 1), 3),
+        (True, "v1", (2, 2, 1), 3),
+        (True, "v2", (2, 2, 1), 3),
     ],
 )
 @mock.patch.object(containerd, "config")
 @mock.patch.object(containerd, "is_state")
-def test_resolve_config_version(is_state, config, auto, config_version, selected_version):
+def test_resolve_config_version(is_state, config, auto, config_version, containerd_version, selected_version):
     """Use the configured version or select one automatically."""
     is_state.return_value = auto
     config.return_value.get.return_value = config_version
 
-    assert containerd._resolve_config_version((2, 2, 1)) == selected_version
+    assert containerd._resolve_config_version(containerd_version) == selected_version
 
 
 @pytest.mark.parametrize(
