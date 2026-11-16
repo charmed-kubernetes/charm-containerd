@@ -79,7 +79,8 @@ def _upgrade(containerd, gpu):
     try:
         pkg = CONTAINERD_PACKAGE
         if upgrade_list.get(f"{pkg}.upgrade-available"):
-            reinstall_containerd()
+            if not reinstall_containerd():
+                raise ActionError("Failed to upgrade containerd")
             upgrade_list[f"{pkg}.upgrade-complete"] = True
 
         if gpu and action_get().get("force") and is_state("containerd.nvidia.ready"):

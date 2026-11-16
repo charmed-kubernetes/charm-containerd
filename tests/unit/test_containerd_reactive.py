@@ -387,9 +387,55 @@ def test_render_registry_config_stale(render, tmp_path):
     assert unitdata.kv().get("registry-hosts") == ["registry.example"]
 
 
+@mock.patch.object(containerd, "apt_install")
+@mock.patch.object(containerd, "_resolve_config_version", side_effect=ValueError)
+@mock.patch.object(containerd, "_containerd_candidate_version", return_value=(2, 2, 1))
+@mock.patch.object(containerd, "apt_update")
+def test_reinstall_containerd_incompatible(
+    apt_update,
+    containerd_candidate_version,
+    resolve_config_version,
+    apt_install,
+):
+    """Reject an incompatible apt candidate before installation."""
+    set_state.reset_mock()
+
+    assert not containerd.reinstall_containerd()
+
+    apt_update.assert_called_once_with(fatal=True)
+    containerd_candidate_version.assert_called_once_with()
+    resolve_config_version.assert_called_once_with((2, 2, 1))
+    apt_install.assert_not_called()
+    set_state.assert_called_once_with("containerd.config-version.unsupported")
+
+
+@mock.patch.object(containerd, "config_changed")
+@mock.patch.object(containerd, "reinstall_containerd", return_value=False)
+def test_install_containerd_incompatible(reinstall_containerd, config_changed):
+    """Stop installation after rejecting an incompatible apt candidate."""
+    containerd.install_containerd()
+
+    reinstall_containerd.assert_called_once_with()
+    config_changed.assert_not_called()
+
+
+@mock.patch.object(containerd, "config_changed")
+@mock.patch.object(containerd, "reinstall_containerd", return_value=False)
+@mock.patch.object(containerd, "apt_hold")
+@mock.patch.object(containerd, "is_state", return_value=True)
+def test_upgrade_charm_incompatible(is_state, apt_hold, reinstall_containerd, config_changed):
+    """Stop upgrade after rejecting an incompatible apt candidate."""
+    containerd.upgrade_charm()
+
+    reinstall_containerd.assert_called_once_with()
+    config_changed.assert_not_called()
+
+
 @pytest.mark.parametrize("has_resource", (False, True), ids=("empty", "non-empty"))
 @mock.patch.object(containerd, "config_changed")
 @mock.patch.object(containerd, "check_call")
+@mock.patch.object(containerd, "_resolve_config_version", new=mock.Mock(return_value=2))
+@mock.patch.object(containerd, "_containerd_binary_version", new=mock.Mock(return_value=(1, 7, 30)))
 @mock.patch.object(containerd.containerd, "unpack_containerd_resource")
 def test_install_containerd_resource(unpack_containerd_resource, check_call, config_changed, tmp_path, has_resource):
     """Rerender config after evaluating the final containerd binary."""
@@ -419,8 +465,32 @@ def test_install_containerd_resource(unpack_containerd_resource, check_call, con
 
     containerd.install_containerd_resource()
 
-    containerd.remove_state.assert_called_once_with("containerd.resource.installed")
+    containerd.remove_state.assert_any_call("containerd.resource.installed")
     assert ordered_calls.mock_calls == expected_calls
+
+
+@mock.patch.object(containerd, "config_changed")
+@mock.patch.object(containerd, "check_call")
+@mock.patch.object(containerd, "_resolve_config_version", new=mock.Mock(side_effect=ValueError))
+@mock.patch.object(containerd, "_containerd_binary_version", new=mock.Mock(return_value=(2, 2, 1)))
+@mock.patch.object(containerd.containerd, "unpack_containerd_resource")
+def test_install_containerd_resource_incompatible(
+    unpack_containerd_resource,
+    check_call,
+    config_changed,
+    tmp_path,
+):
+    """Do not install a resource with an incompatible config version."""
+    unpack_containerd_resource.return_value = tmp_path
+    set_state.reset_mock()
+    containerd.remove_state.reset_mock()
+
+    containerd.install_containerd_resource()
+
+    check_call.assert_not_called()
+    set_state.assert_called_once_with("containerd.config-version.unsupported")
+    containerd.remove_state.assert_not_called()
+    config_changed.assert_not_called()
 
 
 @mock.patch.object(containerd, "config_changed")
@@ -449,14 +519,14 @@ def test_install_containerd_resource_failure(unpack_containerd_resource, config_
     ],
 )
 @pytest.mark.parametrize("gpu", ("off", "on"), ids=("gpu off", "gpu on"))
-@mock.patch("reactive.containerd._installed_containerd_version")
+@mock.patch("reactive.containerd._containerd_installed_version")
 @mock.patch("reactive.containerd.endpoint_from_flag")
 @mock.patch("reactive.containerd.config")
 @mock.patch("charms.layer.containerd.can_mount_cgroup2", mock.Mock(return_value=False))
 def test_config_changed(
     mock_config,
     mock_endpoint_from_flag,
-    mock_installed_containerd_version,
+    mock_containerd_installed_version,
     gpu,
     version,
     config_version,
@@ -477,7 +547,7 @@ def test_config_changed(
 
     render.side_effect = jinja_render
     config = mock_config.return_value = MockConfig(config_version="v1", gpu_driver="auto", runtime="auto")
-    mock_installed_containerd_version.return_value = version
+    mock_containerd_installed_version.return_value = version
     mock_endpoint_from_flag.return_value.get_sandbox_image.return_value = "sandbox-image"
     flags = {
         "containerd.nvidia.available": gpu == "on",

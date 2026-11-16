@@ -76,10 +76,21 @@ def _containerd_config_version(version: typing.Tuple[int, int, int]) -> int:
     raise ValueError("Containerd {} is not supported".format(".".join(map(str, version))))
 
 
-def _installed_containerd_version() -> typing.Tuple[int, int, int]:
-    """Return the installed containerd version."""
-    output = check_output(["containerd", "--version"]).decode()
+def _containerd_binary_version(binary) -> typing.Tuple[int, int, int]:
+    """Return the version reported by a containerd binary."""
+    output = check_output([binary, "--version"]).decode()
     return _containerd_version(output)
+
+
+def _containerd_installed_version() -> typing.Tuple[int, int, int]:
+    """Return the installed containerd version."""
+    return _containerd_binary_version("containerd")
+
+
+def _containerd_candidate_version() -> typing.Tuple[int, int, int]:
+    """Return the containerd version available from apt."""
+    package = apt_packages({CONTAINERD_PACKAGE})[CONTAINERD_PACKAGE]
+    return _containerd_version(package.version)
 
 
 def _resolve_config_version(version: typing.Tuple[int, int, int]) -> int:
@@ -567,11 +578,13 @@ def upgrade_charm():
     # Prevent containerd apt pkg from being implicitly updated.
     apt_hold(CONTAINERD_PACKAGE)
 
-    remove_state("containerd.resource.evaluated")
     if is_state("containerd.resource.installed"):
         # if a resource is currently overriding the deb,
         # upgrade containerd from the apt packages
-        reinstall_containerd()
+        if not reinstall_containerd():
+            return
+
+    remove_state("containerd.resource.evaluated")
 
     # Re-render config in case the template has changed in the new charm.
     config_changed()
@@ -617,18 +630,30 @@ def install_containerd():
     :return: None
     """
     status.maintenance("Installing containerd via apt")
-    reinstall_containerd()
+    if not reinstall_containerd():
+        return
     config_changed()
 
 
-def reinstall_containerd():
+def reinstall_containerd() -> bool:
     """Install and hold containerd with apt."""
     apt_update(fatal=True)
+
+    try:
+        version = _containerd_candidate_version()
+        _resolve_config_version(version)
+    except ValueError:
+        set_state("containerd.config-version.unsupported")
+        return False
+    remove_state("containerd.config-version.unsupported")
+
     apt_unhold(CONTAINERD_PACKAGE)
     apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
     apt_hold(CONTAINERD_PACKAGE)
     set_state("containerd.installed")
+    remove_state("containerd.resource.installed")
     remove_state("containerd.resource.evaluated")
+    return True
 
 
 @when("containerd.installed")
@@ -643,6 +668,15 @@ def install_containerd_resource():
         log(traceback.format_exc())
         status.blocked(str(e))
         return
+
+    if bin_path is not None:
+        try:
+            version = _containerd_binary_version(bin_path / "containerd")
+            _resolve_config_version(version)
+        except ValueError:
+            set_state("containerd.config-version.unsupported")
+            return
+        remove_state("containerd.config-version.unsupported")
 
     remove_state("containerd.resource.installed")
     if bin_path is None:
@@ -931,7 +965,7 @@ def config_changed():
     context = dict(config())
 
     try:
-        version = _installed_containerd_version()
+        version = _containerd_installed_version()
         config_version = _resolve_config_version(version)
     except ValueError:
         set_state("containerd.config-version.unsupported")
