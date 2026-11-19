@@ -63,7 +63,7 @@ async def integration_model(request, ops_test, integration_models):
         yield model
 
 
-async def deploy_bundle(ops_test, model_name, overlay, template_context, channel="edge", wait_for_idle=None):
+async def deploy_bundle(ops_test, model_name, overlay, template_context, channel="edge"):
     """Deploy the integration bundle in a tracked model."""
     with ops_test.model_context(model_name) as model:
         overlays = [ops_test.Bundle("kubernetes-core", channel=channel), overlay]
@@ -77,13 +77,8 @@ async def deploy_bundle(ops_test, model_name, overlay, template_context, channel
         rc, stdout, stderr = await ops_test.run(*shlex.split(cmd))
         assert rc == 0, f"Bundle deploy failed: {(stderr or stdout).strip()}"
 
-        if wait_for_idle is not None:
-            wait_options = dict(wait_for_idle)
-            wait_options.setdefault(
-                "apps",
-                [app for fragment in (bundle, *overlays) for app in yaml.safe_load(fragment.open())["applications"]],
-            )
-            await model.wait_for_idle(**wait_options)
+        apps = [app for fragment in (bundle, *overlays) for app in yaml.safe_load(fragment.open())["applications"]]
+        await model.wait_for_idle(apps=apps, status="active", timeout=60 * 60, raise_on_error=False)
 
 
 @pytest.mark.abort_on_fail
@@ -132,14 +127,12 @@ async def test_build_and_deploy(ops_test, integration_models, monkeypatch, tmp_p
         Path("tests/data/charm.yaml"),
         {"charm": charm, "containerd_resource": containerd_v1_resource},
         channel="1.30/stable",
-        wait_for_idle={"status": "active", "timeout": 60 * 60},
     )
     await deploy_bundle(
         ops_test,
         integration_models[CONTAINERD_V2_MODEL],
         Path("tests/data/charm.yaml"),
         {"charm": charm, "containerd_resource": containerd_v2_resource},
-        wait_for_idle={"status": "active", "timeout": 60 * 60},
     )
 
 
