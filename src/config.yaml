@@ -69,7 +69,8 @@ options:
     type: string
     default: "containerd-shim"
     description: |
-      Set a custom containerd shim.
+      Set a custom containerd shim for containerd 1.x.
+      This option has no effect with containerd 2.x and v3 config.
   http_proxy:
      type: string
      default: ""
@@ -94,11 +95,12 @@ options:
         2023 characters long.
   config_version:
     type: string
-    default: v2
+    default: auto
     description: |
-        Containerd config version. Can be "v1" or "v2".
-
-        DEPRECATED: config_version will be removed in a future release.
+        DEPRECATED: This option will be removed in a future release. Existing
+        deployments upgraded from earlier revisions may select v1, v2, or auto.
+        New deployments use auto, which selects the configuration version based
+        on the installed containerd version.
   nvidia_apt_key_urls:
     type: string
     default: |

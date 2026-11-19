@@ -4,10 +4,15 @@ applications:
     charm: {{charm}}
     channel: null
     resources:
-      containerd: {{containerd_multiarch|default("0")}}
+      containerd: {{containerd_resource}}
     options:
       disable-juju-proxy: "true"
   docker-registry:
+    charm: docker-registry
+    channel: edge
+    num_units: 1
+  # Registry for testing custom_registries option.
+  custom-registry:
     charm: docker-registry
     channel: edge
     num_units: 1
@@ -19,5 +24,9 @@ applications:
 relations:
 - - docker-registry:docker-registry
   - containerd:docker-registry
+# custom-registry does not declare relation intentionally.
+# docker-registry supplies credentials via relation.
 - - docker-registry:cert-provider
+  - easyrsa:client
+- - custom-registry:cert-provider
   - easyrsa:client

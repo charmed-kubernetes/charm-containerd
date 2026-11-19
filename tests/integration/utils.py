@@ -1,6 +1,6 @@
+import logging
 from juju.unit import Unit
 from typing import Mapping, Any
-import logging
 
 log = logging.getLogger(__name__)
 
