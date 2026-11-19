@@ -1006,7 +1006,7 @@ def config_changed():
     invalid_reason = invalid_custom_registries(context["custom_registries"])
     if invalid_reason:
         log(invalid_reason)
-        status.blocked("Invalid custom_registries: {}".format(invalid_reason.splitlines()[-1]))
+        set_state("containerd.custom-registries.invalid")
         return
 
     try:
