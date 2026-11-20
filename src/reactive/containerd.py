@@ -52,6 +52,7 @@ from charmhelpers.fetch import (
 from charmhelpers.fetch.ubuntu_apt_pkg import Package
 
 NVIDIA_SOURCES_FILE = "/etc/apt/sources.list.d/nvidia.list"
+NEEDRESTART_SUSPEND = "NEEDRESTART_SUSPEND"
 
 
 def apt_packages(packages: typing.Set[str]) -> typing.Mapping[str, Package]:
@@ -468,7 +469,10 @@ def upgrade_charm():
     if is_state("containerd.resource.installed"):
         # if a resource is currently overriding the deb,
         # upgrade containerd from the apt packages
-        reinstall_containerd()
+        # to make sure we get latest systemd services, latest configs,
+        # and dependencies like runc if needed -- but don't restart into
+        # those services
+        reinstall_containerd(restart=False)
 
     # Re-render config in case the template has changed in the new charm.
     config_changed()
@@ -518,11 +522,34 @@ def install_containerd():
     config_changed()
 
 
-def reinstall_containerd():
+@contextlib.contextmanager
+def _apt_restart_services(restart: bool):
+    """
+    Context manager to conditionally restart services after apt operations.
+
+    :param bool restart: whether to restart services after apt operations
+    """
+    env = NEEDRESTART_SUSPEND
+    original = os.environ.pop(env, None)
+    log(f"Services will {'' if restart else 'not '}be restarted after apt operations.")
+    if not restart:
+        os.environ.update({env: "1"})
+
+    try:
+        yield
+    finally:
+        if original is None:
+            os.environ.pop(env, None)
+        else:
+            os.environ[env] = original
+
+
+def reinstall_containerd(restart: bool = True):
     """Install and hold containerd with apt."""
     apt_update(fatal=True)
     apt_unhold(CONTAINERD_PACKAGE)
-    apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
+    with _apt_restart_services(restart):
+        apt_install([CONTAINERD_PACKAGE, "--reinstall"], fatal=True)
     apt_hold(CONTAINERD_PACKAGE)
     set_state("containerd.installed")
     remove_state("containerd.resource.evaluated")
