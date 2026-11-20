@@ -1,4 +1,5 @@
 import os
+import shutil
 import traceback
 
 from charmhelpers.core import hookenv, unitdata
@@ -44,6 +45,7 @@ def unpack_containerd_resource() -> Union[None, Path]:
 
     charm_dir = os.getenv("CHARM_DIR")
     unpack_path = Path(charm_dir, "resources", "containerd")
+    shutil.rmtree(unpack_path, ignore_errors=True)
     return _unpack_archive(archive, unpack_path)
 
 
