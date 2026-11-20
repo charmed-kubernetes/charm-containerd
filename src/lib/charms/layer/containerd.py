@@ -45,7 +45,12 @@ def unpack_containerd_resource() -> Union[None, Path]:
 
     charm_dir = os.getenv("CHARM_DIR")
     unpack_path = Path(charm_dir, "resources", "containerd")
-    shutil.rmtree(unpack_path, ignore_errors=True)
+    try:
+        shutil.rmtree(unpack_path)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        raise ResourceFailure(f"Failed to clear stale containerd resource: {e}")
     return _unpack_archive(archive, unpack_path)
 
 
@@ -62,10 +67,12 @@ def _unpack_archive(archive, unpack_path):
 
 
 def _collect_resource_bins(unpack_path):
-    for arch_based in unpack_path.glob("./*.tar.gz"):
-        if arch() in arch_based.name:
-            unpack_path = unpack_path / arch()
-            return _unpack_archive(arch_based, unpack_path)
+    matches = [p for p in unpack_path.glob("./*.tar.gz") if arch() in p.name]
+    if len(matches) > 1:
+        names = ", ".join(sorted(p.name for p in matches))
+        raise ResourceFailure(f"containerd resource has multiple {arch()} archives: {names}")
+    if matches:
+        return _unpack_archive(matches[0], unpack_path / arch())
     bins = list(unpack_path.glob("bin/*"))
     if not bins:
         raise ResourceFailure("containerd resource didn't contain any binaries")
